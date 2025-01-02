@@ -215,6 +215,17 @@ body {
 	height: 1em;
 	opacity: 1;
 }
+.button.secondary {
+	background-color: var(--gray-1);
+	color: var(--dark-text);
+}
+.button.danger {
+	background-color: #f44336;
+	color: white;
+}
+.button.hide {
+	display: none;
+}
 @keyframes spin {
 	from {
 		transform: translate(-50%, -50%) rotate(0deg);
@@ -262,4 +273,9 @@ code {
     background: #fff2;
     padding: 2px 4px;
     border-radius: 2px;
+}
+
+.card a:not(.button) {
+	color: var(--user-card-link-colour);
+	text-decoration: none;
 }

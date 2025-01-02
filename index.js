@@ -495,38 +495,160 @@ client.once('ready', async () => {
 });
 
 
-// Handle membership management
-
-app.get('/membership/:encryptedUserIdAndExpiry', async (req, res) => {
-    const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
+// Membership management routes
+const getDataByEncryptedUserIdAndExpiry = async (encryptedUserIdAndExpiry, res) => {
     const userIdAndExpiry = decryptUserId(encryptedUserIdAndExpiry);
     if (!userIdAndExpiry) {
-        return res.send(getTemplate('error', { message: 'Invalid membership management link. It may be corrupted. Please use <code>/manage_membership</code> in the server to get a new link.' }));
+        res.send(getTemplate('error', { message: 'Invalid membership management link. It may be corrupted. Please use <code>/manage_membership</code> in the server to get a new link.' }));
+        return null;
     }
     const [userId, expiry] = userIdAndExpiry.split('-');
     
     if (!userId) {
-        return res.send(getTemplate('error', { message: 'Invalid membership management link. It may be corrupted. Please use <code>/manage_membership</code> in the server to get a new link.' }));
+        res.send(getTemplate('error', { message: 'Invalid membership management link. It may be corrupted. Please use <code>/manage_membership</code> in the server to get a new link.' }));
+        return null;
     }
     if (Date.now() > expiry) {
-        return res.send(getTemplate('error', { message: 'Membership management link has expired for security reasons. Please use <code>/manage_membership</code> in the server to get a new link.' }));
+        res.send(getTemplate('error', { message: 'Membership management link has expired for security reasons. Please use <code>/manage_membership</code> in the server to get a new link.' }));
+        return null;
     }
 
     const row = await sheet.findRowByKeyValue('discord_id', userId);
     if (!row) {
-        return res.send(getTemplate('error', { message: 'User not found in the database. Please contact the club executives to get your data migrated.' }));
+        res.send(getTemplate('error', { message: 'User not found in the database. Please contact the club executives to get your data migrated.' }));
+        return null;
+    }
+    return { userId, expiry, row };
+}
+
+// membership management page
+app.get('/membership/:encryptedUserIdAndExpiry', async (req, res) => {
+    const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
+    
+    const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
+    if (!reqData) return;
+    const { userId, expiry, row } = reqData;
+
+    // Get the osu account id
+    const rawOsu = (row.get('osu') ?? '').trim();
+    let osuAccountId = '';
+    if (rawOsu.match(/^\d+$/)) {
+        osuAccountId = rawOsu;
+    } else if (rawOsu.includes('osu.ppy.sh')) {
+        osuAccountId = rawOsu.match(/\d+/)[0];
     }
 
-    // TODO: Add a form to manage membership
-    res.send("TODO: Membership management form");
-    return;
-    
+    // Send the membership management page
     res.send(getTemplate('membership', {
-        discordId: encryptedUserId,
+        token: encryptedUserIdAndExpiry,
+        discordId: userId,
         discordUsername: row.get('discord_username'),
-        watiam: row.get('watiam') ?? '',
-        osuUsername: row.get('osu_username') ?? ''
+        watiam: row.get('watiam') ?? 'Unknown',
+        osuAccount: osuAccountId,
+        membershipManagementBaseUrl: `${env.URL}/membership/${encryptedUserIdAndExpiry}`,
     }));
+});
+
+// link osu account oauth redirect
+app.get('/membership/:encryptedUserIdAndExpiry/link-osu-account', async (req, res) => {
+    const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
+    
+    const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
+    if (!reqData) return;
+    const { userId, expiry, row } = reqData;
+
+    // Get the osu account id
+    const rawOsu = (row.get('osu') ?? '').trim();
+    let osuAccountId = '';
+    if (rawOsu.match(/^\d+$/)) {
+        osuAccountId = rawOsu;
+    } else if (rawOsu.includes('osu.ppy.sh')) {
+        osuAccountId = rawOsu.match(/\d+/)[0];
+    }
+
+    if (osuAccountId) {
+        return res.send(getTemplate('error', { message: 'You have already linked an osu account. If you want to change it, please unlink it in the membership management page first.' }));
+    }
+
+    const redirectUri = `${env.URL}/osu-auth-callback`;
+    const link = `https://osu.ppy.sh/oauth/authorize?client_id=${env.OSU_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=identify&state=${encryptedUserIdAndExpiry}`;
+    res.redirect(link);
+});
+
+// osu oauth callback
+app.get('/osu-auth-callback', async (req, res) => {
+    const { code, state } = req.query;
+    const encryptedUserIdAndExpiry = state;
+
+    const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
+    if (!reqData) return;
+    const { userId, expiry, row } = reqData;
+
+    const res2 = await fetch('https://osu.ppy.sh/oauth/token', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            client_id: env.OSU_CLIENT_ID,
+            client_secret: env.OSU_CLIENT_SECRET,
+            code,
+            grant_type: 'authorization_code',
+            redirect_uri: `${env.URL}/osu-auth-callback`
+        })
+    });
+    const data = await res2.json();
+    if (data.error) {
+        return res.send(getTemplate('error', { message: `Error linking osu account. Please try again later. Error: ${data.error}` }));
+    }
+
+    const accessToken = data.access_token;
+
+    const res3 = await fetch('https://osu.ppy.sh/api/v2/me', {
+        headers: {
+            Authorization: `Bearer ${accessToken}`
+        }
+    });
+    const userData = await res3.json();
+    const osuAccountId = userData.id;
+
+    // Update the row
+    await sheet.updateRow(row, {
+        osu: `https://osu.ppy.sh/users/${osuAccountId}`
+    });
+
+    // Redirect to the membership management page
+    res.redirect(`${env.URL}/membership/${encryptedUserIdAndExpiry}`);
+});
+
+// unlink osu account
+app.post('/membership/:encryptedUserIdAndExpiry/unlink-osu-account', async (req, res) => {
+    const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
+    
+    const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
+    if (!reqData) return;
+    const { userId, expiry, row } = reqData;
+
+    // Get the osu account id
+    const rawOsu = (row.get('osu') ?? '').trim();
+    let osuAccountId = '';
+    if (rawOsu.match(/^\d+$/)) {
+        osuAccountId = rawOsu;
+    } else if (rawOsu.includes('osu.ppy.sh')) {
+        osuAccountId = rawOsu.match(/\d+/)[0];
+    }
+
+    if (!osuAccountId) {
+        return res.send({ status: 'error', message: 'You have not linked an osu account yet.' });
+    }
+    
+    // Delete the osu account from the row
+    await sheet.updateRow(row, {
+        osu: ''
+    });
+
+    // Return success
+    res.send({ status: 'success' });
 });
 
 // Start the server
