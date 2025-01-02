@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>osu!uw Membership Management</title>
+	<link rel="stylesheet" href="../static/css/style.css">
+	<script src="../static/js/triangles.js"></script>
+</head>
+<body>
+	<svg id="background" viewBox="0 0 192 168"></svg>
+    <div class="app">
+		<div id="welcome-message" class="card">
+			<div class="card-body row">
+				<svg class="big-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M256 48a208 208 0 1 1 0 416 208 208 0 1 1 0-416zm0 464A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM369 209c9.4-9.4 9.4-24.6 0-33.9s-24.6-9.4-33.9 0l-111 111-47-47c-9.4-9.4-24.6-9.4-33.9 0s-9.4 24.6 0 33.9l64 64c9.4 9.4 24.6 9.4 33.9 0L369 209z"/></svg>
+				<div>
+					<h1 style="margin-top: 0.4em;">You have been verified!</h1>
+					<p>Welcome to osu!uwaterloo! You have been given the verified roles on the Discord server.</p>
+				</div>
+			</div>
+		</div>
+		<div id="welcome-message" class="card">
+			<div class="card-title">Manage Membership</div>
+			<div class="card-body">
+				<p>You can manage your membership below.</p>
+				<p class="note">Use the <code>/manage_membership</code> command in the Discord server to access this page later.</p>
+			</div>
+		</div>
+
+		<div id="email-sent" class="card">
+			<div class="card-title">Email Sent</div>
+			<div class="card-body">
+				<svg class="big-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M64 112c-8.8 0-16 7.2-16 16l0 22.1L220.5 291.7c20.7 17 50.4 17 71.1 0L464 150.1l0-22.1c0-8.8-7.2-16-16-16L64 112zM48 212.2L48 384c0 8.8 7.2 16 16 16l384 0c8.8 0 16-7.2 16-16l0-171.8L322 328.8c-38.4 31.5-93.7 31.5-132 0L48 212.2zM0 128C0 92.7 28.7 64 64 64l384 0c35.3 0 64 28.7 64 64l0 256c0 35.3-28.7 64-64 64L64 448c-35.3 0-64-28.7-64-64L0 128z"/></svg>
+				<p>An email has been sent to your UWaterloo email address (<code><span class="watiam-in-email">{{watiam}}</span>@uwaterloo.ca</code>). Please click the link in the email to verify your account.</p>
+				<p id="max-retries" class="note warning hide">You have reached the maximum number of retries. Please try again later.</p>
+				<p>You can close this tab now.</p>
+			</div>
+			<div class="card-actions">
+				<button class="button" id="retry" onclick="retry()" disabled>Retry</button>
+				<a class="button" href="https://outlook.office.com/mail/inbox">Go to Email</a>
+			</div>
+		</div>
+    </div>
+    <script>
+		let emailSent = {{ emailSent }};
+		let nextRetry = {{ nextRetry }};
+		const discordId = '{{ discordId }}';
+
+		if (emailSent) {
+			document.querySelector('#watiam-form').classList.add('hide');
+			document.querySelector('#email-sent').classList.remove('hide');
+		}
+
+		const watiamInput = document.querySelector('#watiam');
+		const verifyButton = document.querySelector('#verify');
+		const errorBox = document.querySelector('#error');
+		const retryButton = document.querySelector('#retry');
+
+		watiamInput.addEventListener('input', function() {
+			const isEmpty = this.value.trim() === '';
+			verifyButton.disabled = isEmpty;
+		});
+		watiamInput.addEventListener('change', function() {
+			this.value = this.value.trim();
+		});
+		watiamInput.addEventListener('keydown', function(event) {
+			if (event.key === 'Enter') {
+				verify();
+			}
+		});
+		
+        async function verify() {
+			function setLoading(loading) {
+				watiamInput.disabled = loading;
+				verifyButton.disabled = loading;
+				verifyButton.classList.toggle('loading', loading);
+			}
+			function setError(message) {
+				errorBox.innerHTML = message;
+				errorBox.classList.remove('hide');
+				setLoading(false);
+			}
+			function clearError() {
+				errorBox.innerHTML = '';
+				errorBox.classList.add('hide');
+			}
+			const watiam = watiamInput.value.trim().toLowerCase();
+
+			if (!/^[a-z0-9]{3,8}$/.test(watiam)) {
+				setError('Please enter a valid WatIAM ID.');
+				return;
+			}
+
+			setLoading(true);
+
+			try {
+				const response = await fetch('/send-verification-email', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						watiam,
+						discordId
+					})
+				});
+				if (!response.ok) {
+					setError(`An error occurred. Please try again later. </br> ${response.status} ${response.statusText}`);
+					return;
+				}
+				const json = await response.json();
+				console.log(json);
+				if (json.status === 'error') {
+					setError(json.message);
+					return;
+				} else {
+					clearError();
+					emailSent = json.emailSent;
+					nextRetry = json.nextRetry;
+					document.querySelector('.watiam-in-email').innerText = watiam;
+					document.querySelector('#watiam-form').classList.add('hide');
+					document.querySelector('#email-sent').classList.remove('hide');
+					updateRetryCountdown();
+					setInterval(updateRetryCountdown, 500);
+				}
+			} catch (error) {
+				setError(`An error occurred. Please try again later. </br> ${error}`);
+				return;
+			}
+        }
+
+		function retry() {
+			watiamInput.value = '';
+			document.querySelector('#email-sent').classList.add('hide');
+			document.querySelector('#watiam-form').classList.remove('hide');
+			watiamInput.focus();
+		}
+
+		const updateRetryCountdown = () => {
+			if (nextRetry && nextRetry < 0) {
+				document.querySelector('#max-retries').classList.remove('hide');
+				retryButton.disabled = true;
+				retryButton.innerHTML = 'Retry';
+				return;
+			}
+			if (!nextRetry || nextRetry - Date.now() <= 0) {
+				retryButton.disabled = false;
+				retryButton.innerHTML = 'Retry';
+				return;
+			}
+			const seconds = Math.ceil((nextRetry - Date.now()) / 1000);
+			retryButton.disabled = true;
+			retryButton.innerHTML = `Retry (${seconds}s)`;
+		};
+
+		if (nextRetry) {
+			updateRetryCountdown();
+			setInterval(updateRetryCountdown, 500);
+		}
+    </script>
+</body>
+</html>

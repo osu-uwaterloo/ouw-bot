@@ -1,0 +1,537 @@
+
+import { Client, GatewayIntentBits, EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, PermissionFlagsBits } from 'discord.js';
+import express from 'express';
+import env from './env.js';
+import { encryptUserId, decryptUserId, generateRandomToken } from './encryption.js';
+import getTemplate from './template.js';
+import { sendEmail } from './email.js';
+import * as sheet from './spreadsheet.js';
+import Logger from './logging.js';
+
+
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
+});
+
+const logger = new Logger(client);
+
+
+const verificationPool = new Map();
+
+/* An entry in the pool:
+{
+    timestamp: number,
+    interaction: Interaction, // The interaction context,
+    expiry: number, // The timestamp when the verification link expires,
+    watiam?: string, // The watiam of the user
+    emailSent?: number, // The timestamp when the email was sent, if not sent, it's undefined,
+    retries?: number, // Number of retries
+    token?: string, // The verification token in the email
+}
+*/
+
+const checkExpired = () => {
+    const now = Date.now();
+    for (const [userId, verificationInfo] of verificationPool.entries()) {
+        if (!verificationInfo.expiry) continue;
+        if (now > verificationInfo.expiry) {
+            verificationPool.delete(userId);
+        }
+    }
+}
+
+
+const PORT = 3000;
+
+// Define static routes, ./static/* will be served as /static/*
+app.use('/static', express.static('static'));
+
+app.use((req, res, next) => {
+    checkExpired();
+    next();
+});
+
+// Main routes
+app.get('/verify/:encryptedUserId', async (req, res) => {
+    const encryptedUserId = req.params.encryptedUserId;
+    const userId = decryptUserId(encryptedUserId);
+    if (!userId) {
+        return res.send(getTemplate('error', { message: 'Invalid verification link. It may have expired or corrupted. Try getting a new one from the server.' }));
+    }
+
+    try {
+        const guild = await client.guilds.fetch(env.SERVER_ID);
+        const member = await guild.members.fetch(userId);
+
+        const username = member?.user?.username ?? userId;
+
+        const verificationInfo = verificationPool.get(userId);
+        if (!verificationInfo) {
+            return res.send(getTemplate('error', { message: 'Verification link does not exist or has expired. Try getting a new one from the server.' }));
+        }
+        
+        res.send(getTemplate('verification', {
+            discordId: encryptedUserId,
+            discordUsername: username,
+            watiam: verificationInfo.watiam ?? '',
+            emailSent: !!verificationInfo.emailSent,
+            nextRetry: verificationInfo.nextRetry ?? false,
+        }));
+    } catch (error) {
+        console.error('Error during verification:', error);
+        res.send(getTemplate('error', { message: 'An error occurred during verification. Please try again.' }));
+    }
+});
+
+app.post('/send-verification-email', async (req, res) => {
+    console.log(req.body);
+    const { discordId, watiam } = req.body;
+    if (!discordId || !watiam) {
+        return res.send({ status: 'error', message: 'Invalid request. Missing parameters.' });
+    }
+    const userId = decryptUserId(discordId);
+    if (!userId) {
+        return res.send('Invalid verification link. It may have expired or corrupted. Try getting a new one from the server.');
+    }
+    if (watiam.length > 8 || !watiam.match(/^[a-z]{1,}\d*[a-z]{1,}$/i)) {
+        return res.send({ status: 'error', message: 'Invalid WatIAM ID. Please enter a valid WatIAM ID.' });
+    }
+    const verificationInfo = verificationPool.get(userId);
+    if (!verificationInfo) {
+        return res.send({ status: 'error', message: 'Verification link does not exist or has expired. Try getting a new one from the server.' });
+    }
+    // Check if its before the next retry
+    let nextRetry = verificationInfo.nextRetry;
+    if (nextRetry && Date.now() < nextRetry) {
+        return res.send({ status: 'error', message: `You cannot send email until the next retry. Please wait.` });
+    } else if (nextRetry === -1) {
+        return res.send({ status: 'error', message: `You have reached the maximum number of retries. Please try again later.` });
+    }
+
+    // Generate a random token for verification
+    if (!verificationInfo.token) {
+        verificationInfo.token = generateRandomToken();
+        verificationPool.set(userId, verificationInfo);
+    }
+    
+    // Send email to the user
+    const token = verificationInfo.token;
+    const link = `${env.URL}/email-verify/${discordId}/${token}`;
+    const text = `Click the link to verify your email: ${link}. The link will expire in 1 hour. If you did not request this, please DO NOT click the link and ignore this email.`;
+    const html = getTemplate('email', { verificationLink: link }); // TODO: Make the email template beautiful
+    const to = `${watiam}@uwaterloo.ca`;
+
+    console.log('Sending email to:', to);
+    console.log('With verification link:', link);
+
+    try {
+        await sendEmail(to, 'Email Verification', text, html);
+    } catch (error) {
+        console.error('Error sending email:', error);
+        return res.send({ status: 'error', message: 'An error occurred while sending the email. Please try again. If the problem persists, please contact the club executives to get verified manually.' });
+    }
+
+    // Update the verification pool
+    verificationInfo.watiam = watiam;
+    verificationInfo.emailSent = Date.now();
+    verificationPool.expiry = Date.now() + 60 * 60 * 1000;
+
+    // Calculate the next retry time
+    const retries = verificationInfo.retries ?? 0;
+    nextRetry = verificationInfo.emailSent;
+    if (nextRetry) {
+        if (retries <= 4) {
+            nextRetry += [0.5, 1, 2, 3, 5][retries] * 60 * 1000;
+        } else {
+            nextRetry = -1;
+        }
+        verificationInfo.nextRetry = nextRetry;
+    }
+    verificationInfo.retries = retries + 1;
+    verificationPool.set(userId, verificationInfo);
+
+    // Logging
+    logger.verbose(verificationInfo.interaction.member, 'Sent a verification email', 'They have requested a verification email to verify.', [
+        { title: 'WatIAM (they provided)', value: watiam },
+        { title: 'Next Retry', value: nextRetry > 0 ? `<t:${Math.floor(nextRetry / 1000)}:R>` : 'Until the verification link expires' }
+    ]);
+
+    // Send a success response
+    res.send({
+        status: 'success',
+        emailSent: verificationInfo.emailSent,
+        nextRetry: nextRetry
+    });
+});
+
+app.get('/email-verify/:encryptedUserId/:token', async (req, res) => {
+    const encryptedUserId = req.params.encryptedUserId;
+    const token = req.params.token;
+    const userId = decryptUserId(encryptedUserId);
+    if (!userId) {
+        return res.send(getTemplate('error', { message: 'Invalid verification link. It may have expired or corrupted. Try getting a new one from the server.' }));
+    }
+
+    const verificationInfo = verificationPool.get(userId);
+    if (!verificationInfo) {
+        return res.send(getTemplate('error', { message: 'Verification link does not exist or has expired. Try getting a new one from the server.' }));
+    }
+
+    if (verificationInfo.token !== token) {
+        return res.send(getTemplate('error', { message: 'Invalid verification token.' }));
+    }
+
+    const guild = await client.guilds.fetch(env.SERVER_ID);
+    const member = await guild.members.fetch(userId);
+    if (!member) {
+        return res.send(getTemplate('error', { message: 'Cannot find the user in the server. Please join the server first.' }));
+    }
+
+    // Give the verified role to the user
+    await member.roles.add(env.ROLE_ID.VERIFIED);
+    await member.roles.add(env.ROLE_ID.CURRENT_UW_STUDENT);
+
+    // Send a success message to the user
+    sendExclusiveMessage('You have been successfully verified! Welcome to osu!uwaterloo.', member);
+
+    // Update the sheet
+    try {
+        await sheet.addMember(userId, member.user.username, verificationInfo.watiam);
+    } catch (error) {
+        console.error('Error adding member to the sheet:', error);
+    }
+    
+    // Remove the user from the verification pool
+    verificationPool.delete(userId);
+
+    // Logging
+    logger.success(member, 'Has been verified', 'They have completed the email verification process and have been verified as a current UW student.', [{
+        title: 'WatIAM', value: verificationInfo.watiam
+    }]);
+
+    // Get a membership management link
+    const key = `${userId}-${Date.now() + 24 * 60 * 60 * 1000}`;
+    const link = `${env.URL}/membership/${encryptUserId(key)}?verified=true`;
+    
+    res.redirect(link);
+});
+
+// restore verification status for rejoining members
+async function restoreVerificationStatus(member) {
+    const userId = member.id;
+    
+    const row = await sheet.tryFindRowByMultipleKeyValues([
+        ['discord_id', userId],
+        ['discord_username', member.user.username]
+    ]);
+    if (!row) return false;
+    if (row.get('watiam')) {
+        // give the verified role to the user
+        await member.roles.add(env.ROLE_ID.VERIFIED);
+        await member.roles.add(env.ROLE_ID.CURRENT_UW_STUDENT);
+        
+        addMissingFieldsToLegacyRow(member, row);
+
+        return true;
+    } else {
+        await sheet.deleteRow(row);
+        return false;
+    }
+}
+
+// Listen for new members
+client.on('guildMemberAdd', async (member) => {
+    if (await restoreVerificationStatus(member)) {
+        await sendExclusiveMessage('Welcome back to osu!uwaterloo! Your have been verified.', member);
+        logger.success(member, 'Has been verified', 'The user has been verified as a current UW student before. They rejoined the server and have been given the verified role automatically.');
+    }
+});
+
+// Setup verification button in announcements
+async function setupVerificationButton(message) {
+    const embed = new EmbedBuilder()
+        .setColor('#feeb1d')
+        .setDescription(`
+          # Verification
+          
+          In order to chat in this server, you must be given the @Verified tag.
+
+          ## You are a UWaterloo student
+
+          **If you are a Waterloo student, you can click on the button below to validate yourself as a current student**, which will verify you as well as grant you access to a dedicated section of the server just for actual club members. It also grants you tracking on the ⁠scores-feed, posts your stream to the ⁠stream-hype channel, and gets you added to our club website!
+
+          ## You are not a UWaterloo student
+
+          If you are not a Waterloo student, just let us know how you found your way here and if possible, who invited you, in #manual-verify channel. Ping @Club Executive after doing this and you’ll be given the role ASAP.`
+        .replace(/^\s+/gm, '').trim());
+        
+    const verifyButton = new ButtonBuilder()
+        .setCustomId('verify_request')
+        .setLabel('Request Verification Link')
+        .setStyle(ButtonStyle.Primary);
+
+    const row = new ActionRowBuilder().addComponents(verifyButton);
+
+    return await message.channel.send({
+        embeds: [embed],
+        components: [row]
+    });
+}
+
+// Handle button interactions
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+
+    const action = interaction.customId;
+    
+    switch (action) {
+        case 'verify_request':
+            await onVerifyRequest(interaction);
+            break;
+    }
+});
+
+
+async function onVerifyRequest(interaction) {
+    // get all the roles of the user
+    const roles = interaction.member.roles.cache;
+    const isVerified = roles.has(env.ROLE_ID.VERIFIED);
+    const isCurrentUWStudent = roles.has(env.ROLE_ID.CURRENT_UW_STUDENT);
+    if (isCurrentUWStudent) {
+        if (!isVerified) {
+            // This circumstance should never happen, but just in case, give them the verified role
+            await interaction.member.roles.add(env.ROLE_ID.VERIFIED);
+            await interaction.reply({
+                content: 'You are already a current UW student. I have given you the verified role.',
+                ephemeral: true
+            });
+        } else {
+            await interaction.reply({
+                content: 'You are already verified as a current UW student.',
+                ephemeral: true
+            });
+        }
+        return;
+    }
+    const hasSkipRole = roles.some(role => env.SKIP_ROLE_IDS.includes(role.id));
+    if (hasSkipRole) {
+        await interaction.reply({
+            content: 'You are already verified as other roles such as Alumni. You do not need to verify again.',
+            ephemeral: true
+        });
+        return;
+    }
+
+    // If they are already verified before, give them the role
+    if (await restoreVerificationStatus(interaction.member)) {
+        await interaction.reply({
+            content: 'Welcome back to osu!uwaterloo! Your have been verified.',
+            ephemeral: true
+        });
+        logger.success(interaction.member, 'Has been verified', 'The user has been verified as a current UW student before. They made a verification request and have been given the verified role automatically.');
+        return;
+    }
+
+    // Generate a verification link and send it to the user
+    const member = interaction.member;
+    const verificationLink = getVerificationLink(interaction.member);
+
+    verificationPool.set(member.id, {
+        timestamp: Date.now(),
+        interaction: interaction,
+        expiry: Date.now() + 60 * 60 * 1000
+    });
+
+    const embed = new EmbedBuilder()
+        .setColor('#5865f2')
+        .setTitle('Verification Link')
+        .setDescription('Click the button below and login with your UWaterloo account to verify');
+    
+    if (isVerified) {
+        embed.addFields({ name: 'Note', value: 'You are already verified, but not as a current UW student. If you are an UW student now, complete the verification process will grant you the current UW student role.' });
+    }
+    
+    const verifyButton = new ButtonBuilder()
+        .setURL(verificationLink)
+        .setLabel('Verify')
+        .setStyle(ButtonStyle.Link);
+    
+    const row = new ActionRowBuilder().addComponents(verifyButton);
+
+    await interaction.reply({
+        embeds: [embed],
+        components: [row],
+        ephemeral: true
+    });
+}
+
+function getVerificationLink(member) {
+    const encryptedUserId = encryptUserId(member.id);
+    return `${env.URL}/verify/${encryptedUserId}`;
+}
+
+// Send an exclusive message to the user via DM
+// if DM fails, send an ephemeral message in the channel
+async function sendExclusiveMessage(message, user, interaction = null) {
+    try {
+        // try DM first
+        await user.send(message);
+        return true;
+    } catch (error) {
+        // if DM fails, send an ephemeral message in the channel
+        try {
+            if (interaction) {
+                await interaction.reply({
+                    ...message,
+                    ephemeral: true
+                });
+                return true;
+            }
+        } catch (error) {
+            console.error('Error sending exclusive message:', error);
+            return false;
+        }
+    }
+    return false;
+}
+
+// Command to setup the verification button in announcements
+client.on('messageCreate', async (message) => {
+    if (message.content === '!setupverify' && 
+        message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        await setupVerificationButton(message);
+    }
+});
+
+async function addMissingFieldsToLegacyRow(member, row = null) {
+    const userId = member.id;
+    const username = member.user.username;
+    if (!row) {
+        row = await sheet.tryFindRowByMultipleKeyValues([
+            ['discord_id', userId],
+            ['discord_username', username]
+        ]);
+    }
+    if (!row) return false;
+    if (row.get('watiam')) {
+        if (row.get('discord_id') !== userId || row.get('discord_username') !== username) {
+            await sheet.updateRow(row, {
+                discord_id: userId,
+                discord_username: username
+            });
+        }
+        return true;
+    } else {
+        return false;
+    }
+}
+
+// Slash command to manage membership
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isCommand()) return;
+
+    const { commandName } = interaction;
+
+    if (commandName === 'manage_membership') {
+        // Check if the user has the verified role
+        const roles = interaction.member.roles.cache;
+        const isVerified = roles.has(env.ROLE_ID.VERIFIED);
+        const isCurrentUWStudent = roles.has(env.ROLE_ID.CURRENT_UW_STUDENT);
+        if (!isCurrentUWStudent || !isVerified) {
+            await interaction.reply({
+                content: 'You need to be a verified current UW student to manage your membership.',
+                ephemeral: true
+            });
+            return;
+        }
+        // Check if the user has a verified WatIAM in the sheet
+        await addMissingFieldsToLegacyRow(interaction.member);
+        const userId = interaction.member.id;
+        const row = await sheet.findRowByKeyValue('discord_id', userId);
+        if (!row) {
+            await interaction.reply({
+                content: 'Please contact the club executives to get your data migrated. You have record with outdated discord username.',
+                ephemeral: true
+            });
+            return;
+        }
+        // Send the user a link to manage their membership
+        const expiry = Date.now() + 24 * 60 * 60 * 1000;
+        const key = `${userId}-${expiry}`;
+        const link = `${env.URL}/membership/${encryptUserId(key)}`;
+        const embed = new EmbedBuilder()
+            .setColor('#5865f2')
+            .setTitle('Manage Membership')
+            .setDescription(`Click the button below to manage your membership`);
+        const manageButton = new ButtonBuilder()
+            .setURL(link)
+            .setLabel('Manage Membership')
+            .setStyle(ButtonStyle.Link);
+        const actionRow = new ActionRowBuilder().addComponents(manageButton);
+        await interaction.reply({
+            embeds: [embed],
+            components: [actionRow],
+            ephemeral: true
+        });
+    }
+});
+
+// Register slash command
+client.once('ready', async () => {
+    const guild = await client.guilds.fetch(env.SERVER_ID);
+    await guild.commands.create({
+        name: 'manage_membership',
+        description: 'Manage my membership (osu! account connection, listing on website, etc.)'
+    });
+});
+
+
+// Handle membership management
+
+app.get('/membership/:encryptedUserIdAndExpiry', async (req, res) => {
+    const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
+    const userIdAndExpiry = decryptUserId(encryptedUserIdAndExpiry);
+    if (!userIdAndExpiry) {
+        return res.send(getTemplate('error', { message: 'Invalid membership management link. It may be corrupted. Please use <code>/manage_membership</code> in the server to get a new link.' }));
+    }
+    const [userId, expiry] = userIdAndExpiry.split('-');
+    
+    if (!userId) {
+        return res.send(getTemplate('error', { message: 'Invalid membership management link. It may be corrupted. Please use <code>/manage_membership</code> in the server to get a new link.' }));
+    }
+    if (Date.now() > expiry) {
+        return res.send(getTemplate('error', { message: 'Membership management link has expired for security reasons. Please use <code>/manage_membership</code> in the server to get a new link.' }));
+    }
+
+    const row = await sheet.findRowByKeyValue('discord_id', userId);
+    if (!row) {
+        return res.send(getTemplate('error', { message: 'User not found in the database. Please contact the club executives to get your data migrated.' }));
+    }
+
+    // TODO: Add a form to manage membership
+    res.send("TODO: Membership management form");
+    return;
+    
+    res.send(getTemplate('membership', {
+        discordId: encryptedUserId,
+        discordUsername: row.get('discord_username'),
+        watiam: row.get('watiam') ?? '',
+        osuUsername: row.get('osu_username') ?? ''
+    }));
+});
+
+// Start the server
+app.listen(PORT, () => {
+    console.log(`Verification server running on port ${PORT}`);
+});
+
+client.login(env.DISCORD_BOT_TOKEN);
