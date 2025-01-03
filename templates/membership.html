@@ -99,6 +99,7 @@
 					<label for="display-on-website-switch"></label>
 					<label for="display-on-website-switch">Display my profile on club website</label>
 				</div>
+				<p class="note">Displaying your profile on the website requires your osu! account to be linked. If there is no osu! account linked, this setting will not take effect.</p>
 			</div>
 			<div class="card-actions">
 				<button class="button" disabled id="update-display-on-website" onclick="submitDisplayOnWebsite()">Update</button>
@@ -119,6 +120,7 @@
 				async function submitDisplayOnWebsite() {
 					document.querySelector('#update-display-on-website').disabled = true;
 					document.querySelector('#update-display-on-website').classList.add('loading');
+					document.querySelector('#display-on-website-switch').disabled = true;
 					try {
 						const response = await fetch('{{ membershipManagementBaseUrl }}/update-display-on-website', {
 							method: 'POST',
@@ -138,8 +140,8 @@
 						console.error(error);
 						alert(`An error occurred. Please try again later. Error: ${error}`);
 					}
-					document.querySelector('#update-display-on-website').disabled = false;
 					document.querySelector('#update-display-on-website').classList.remove('loading');
+					document.querySelector('#display-on-website-switch').disabled = false;
 				}
 			</script>
 		</div>

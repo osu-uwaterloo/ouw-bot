@@ -550,7 +550,7 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req, res) => {
         discordUsername: row.get('discord_username'),
         watiam: row.get('watiam') ?? 'Unknown',
         osuAccount: osuAccountId,
-        displayOnWebsite: row.get('display_on_website') === 'true',
+        displayOnWebsite: utils.parseHumanBool(row.get('display_on_website'), false)
     }));
 });
 
@@ -685,6 +685,23 @@ app.post('/membership/:encryptedUserIdAndExpiry/unlink-osu-account', async (req,
                 .setURL(`https://osu.ppy.sh/users/${osuAccountId}`)
         );
         return row;
+    });
+
+    // Return success
+    res.send({ status: 'success' });
+});
+
+// Update display on website status
+app.post('/membership/:encryptedUserIdAndExpiry/update-display-on-website', async (req, res) => {
+    const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
+    
+    const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
+    if (!reqData) return;
+    const { userId, expiry, row } = reqData;
+
+    const displayOnWebsite = req.body.displayOnWebsite;
+    await sheet.updateRow(row, {
+        display_on_website: displayOnWebsite.toString()
     });
 
     // Return success
