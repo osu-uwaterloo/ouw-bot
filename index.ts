@@ -1,15 +1,25 @@
-
-import { Client, GatewayIntentBits, EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, PermissionFlagsBits } from 'discord.js';
+import {
+    Client, GatewayIntentBits, EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, PermissionFlagsBits,
+    Interaction, GuildMember, GuildMemberRoleManager, Message,
+    ButtonInteraction,
+    TextChannel,
+    MessageCreateOptions,
+    InteractionReplyOptions,
+    ChatInputCommandInteraction
+} from 'discord.js';
 import express from 'express';
 import env from './env.js';
-import { encryptUserId, decryptUserId, generateRandomToken } from './encryption.js';
-import getTemplate from './template.js';
-import { sendEmail } from './email.js';
-import * as sheet from './spreadsheet.js';
-import Logger from './logging.ts';
-import * as utils from './utils.ts';
+import { encryptUserId, decryptUserId, generateRandomToken } from './encryption';
+import getTemplate from './template';
+import { sendEmail } from './email';
+import * as sheet from './spreadsheet';
+import { GoogleSpreadsheetRow } from 'google-spreadsheet';
+import Logger from './logging';
+import * as utils from './utils';
 
-const app = express();
+type BotInteraction = ButtonInteraction | ChatInputCommandInteraction;
+
+const app: express.Application = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -24,20 +34,19 @@ const client = new Client({
 
 const logger = new Logger(client);
 
-
-const verificationPool = new Map();
-
-/* An entry in the pool:
-{
+interface verificationInfo {
     timestamp: number,
     interaction: Interaction, // The interaction context,
-    expiry: number, // The timestamp when the verification link expires,
+    expiry: number, // The timestamp when the verification link expires
     watiam?: string, // The watiam of the user
     emailSent?: number, // The timestamp when the email was sent, if not sent, it's undefined,
     retries?: number, // Number of retries
-    token?: string, // The verification token in the email
+    nextRetry?: number, // The verification token in the email
+    token?: string // The token for email verification
 }
-*/
+
+const verificationPool = new Map<string, verificationInfo>();
+
 
 const checkExpired = () => {
     const now = Date.now();
@@ -61,7 +70,7 @@ app.use((req, res, next) => {
 });
 
 // Main routes
-app.get('/verify/:encryptedUserId', async (req, res) => {
+app.get('/verify/:encryptedUserId', async (req: express.Request, res: express.Response): Promise<any> => {
     const encryptedUserId = req.params.encryptedUserId;
     const userId = decryptUserId(encryptedUserId);
     if (!userId) {
@@ -92,7 +101,7 @@ app.get('/verify/:encryptedUserId', async (req, res) => {
     }
 });
 
-app.post('/send-verification-email', async (req, res) => {
+app.post('/send-verification-email', async (req: express.Request, res: express.Response): Promise<any> => {
     console.log(req.body);
     const { discordId, watiam } = req.body;
     if (!discordId || !watiam) {
@@ -160,7 +169,7 @@ app.post('/send-verification-email', async (req, res) => {
     verificationPool.set(userId, verificationInfo);
 
     // Logging
-    logger.verbose(verificationInfo.interaction.member, 'Sent a verification email', 'They have requested a verification email to verify.', embed => {
+    logger.verbose(verificationInfo.interaction.member as GuildMember, 'Sent a verification email', 'They have requested a verification email to verify.', embed => {
         embed.addFields(
             { name: 'WatIAM', value: watiam },
             { name: 'Next Retry', value: nextRetry > 0 ? `<t:${Math.floor(nextRetry / 1000)}:R>` : 'Until the verification link expires' }
@@ -175,7 +184,7 @@ app.post('/send-verification-email', async (req, res) => {
     });
 });
 
-app.get('/email-verify/:encryptedUserId/:token', async (req, res) => {
+app.get('/email-verify/:encryptedUserId/:token', async (req: express.Request, res: express.Response): Promise<any> => {
     const encryptedUserId = req.params.encryptedUserId;
     const token = req.params.token;
     const userId = decryptUserId(encryptedUserId);
@@ -207,7 +216,7 @@ app.get('/email-verify/:encryptedUserId/:token', async (req, res) => {
 
     // Update the sheet
     try {
-        await sheet.addMember(userId, member.user.username, verificationInfo.watiam);
+        await sheet.addMember(userId, member.user.username, verificationInfo.watiam!);
     } catch (error) {
         console.error('Error adding member to the sheet:', error);
     }
@@ -218,7 +227,7 @@ app.get('/email-verify/:encryptedUserId/:token', async (req, res) => {
     // Logging
     logger.success(member, 'Has been verified', 'They have completed the email verification process and have been verified as a current UW student.', embed => {
         embed.addFields(
-            { name: 'WatIAM', value: verificationInfo.watiam }
+            { name: 'WatIAM', value: verificationInfo.watiam ?? 'Unknown' }
         );
     });
 
@@ -230,7 +239,7 @@ app.get('/email-verify/:encryptedUserId/:token', async (req, res) => {
 });
 
 // restore verification status for rejoining members
-async function restoreVerificationStatus(member) {
+async function restoreVerificationStatus(member: GuildMember) {
     const userId = member.id;
     
     const row = await sheet.tryFindRowByMultipleKeyValues([
@@ -261,7 +270,7 @@ client.on('guildMemberAdd', async (member) => {
 });
 
 // Setup verification button in announcements
-async function setupVerificationButton(message) {
+async function setupVerificationButton(message: Message) {
     const embed = new EmbedBuilder()
         .setColor('#feeb1d')
         .setDescription(`
@@ -283,16 +292,16 @@ async function setupVerificationButton(message) {
         .setLabel('Request Verification Link')
         .setStyle(ButtonStyle.Primary);
 
-    const row = new ActionRowBuilder().addComponents(verifyButton);
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(verifyButton);
 
-    return await message.channel.send({
+    return await (message.channel as TextChannel).send({
         embeds: [embed],
         components: [row]
     });
 }
 
 // Handle button interactions
-client.on('interactionCreate', async (interaction) => {
+client.on('interactionCreate', async (interaction: Interaction) => {
     if (!interaction.isButton()) return;
 
     const action = interaction.customId;
@@ -305,15 +314,15 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 
-async function onVerifyRequest(interaction) {
+async function onVerifyRequest(interaction: ButtonInteraction) {
     // get all the roles of the user
-    const roles = interaction.member.roles.cache;
+    const roles = (interaction.member!.roles as GuildMemberRoleManager).cache;
     const isVerified = roles.has(env.ROLE_ID.VERIFIED);
     const isCurrentUWStudent = roles.has(env.ROLE_ID.CURRENT_UW_STUDENT);
     if (isCurrentUWStudent) {
         if (!isVerified) {
             // This circumstance should never happen, but just in case, give them the verified role
-            await interaction.member.roles.add(env.ROLE_ID.VERIFIED);
+            await (interaction.member!.roles as GuildMemberRoleManager).add(env.ROLE_ID.VERIFIED);
             await interaction.reply({
                 content: 'You are already a current UW student. I have given you the verified role.',
                 ephemeral: true
@@ -336,18 +345,18 @@ async function onVerifyRequest(interaction) {
     }
 
     // If they are already verified before, give them the role
-    if (await restoreVerificationStatus(interaction.member)) {
+    if (await restoreVerificationStatus(interaction.member as GuildMember)) {
         await interaction.reply({
             content: 'Welcome back to osu!uwaterloo! Your have been verified.',
             ephemeral: true
         });
-        logger.success(interaction.member, 'Has been verified', 'The user has been verified as a current UW student before. They made a verification request and have been given the verified role automatically.');
+        logger.success(interaction.member as GuildMember, 'Has been verified', 'The user has been verified as a current UW student before. They made a verification request and have been given the verified role automatically.');
         return;
     }
 
     // Generate a verification link and send it to the user
-    const member = interaction.member;
-    const verificationLink = getVerificationLink(interaction.member);
+    const member = interaction.member as GuildMember;
+    const verificationLink = getVerificationLink(interaction.member as GuildMember);
 
     verificationPool.set(member.id, {
         timestamp: Date.now(),
@@ -369,7 +378,8 @@ async function onVerifyRequest(interaction) {
         .setLabel('Verify')
         .setStyle(ButtonStyle.Link);
     
-    const row = new ActionRowBuilder().addComponents(verifyButton);
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(verifyButton);
+    
 
     await interaction.reply({
         embeds: [embed],
@@ -378,24 +388,27 @@ async function onVerifyRequest(interaction) {
     });
 }
 
-function getVerificationLink(member) {
+function getVerificationLink(member: GuildMember) {
     const encryptedUserId = encryptUserId(member.id);
     return `${env.URL}/verify/${encryptedUserId}`;
 }
 
 // Send an exclusive message to the user via DM
 // if DM fails, send an ephemeral message in the channel
-async function sendExclusiveMessage(message, user, interaction = null) {
+async function sendExclusiveMessage(message: string | MessageCreateOptions | InteractionReplyOptions, member: GuildMember, interaction: BotInteraction | null = null) {
     try {
         // try DM first
-        await user.send(message);
+        await member.send(message as (string | MessageCreateOptions));
         return true;
     } catch (error) {
         // if DM fails, send an ephemeral message in the channel
         try {
             if (interaction) {
+                if (typeof message === 'string') {
+                    message = { content: message };
+                }
                 await interaction.reply({
-                    ...message,
+                    ...message as InteractionReplyOptions,
                     ephemeral: true
                 });
                 return true;
@@ -411,12 +424,12 @@ async function sendExclusiveMessage(message, user, interaction = null) {
 // Command to setup the verification button in announcements
 client.on('messageCreate', async (message) => {
     if (message.content === '!setupverify' && 
-        message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        message.member!.permissions.has(PermissionFlagsBits.Administrator)) {
         await setupVerificationButton(message);
     }
 });
 
-async function addMissingFieldsToLegacyRow(member, row = null) {
+async function addMissingFieldsToLegacyRow(member: GuildMember, row: GoogleSpreadsheetRow | null = null) : Promise<boolean> {
     const userId = member.id;
     const username = member.user.username;
     if (!row) {
@@ -447,7 +460,7 @@ client.on('interactionCreate', async (interaction) => {
 
     if (commandName === 'manage_membership') {
         // Check if the user has the verified role
-        const roles = interaction.member.roles.cache;
+        const roles = (interaction.member!.roles as GuildMemberRoleManager).cache;
         const isVerified = roles.has(env.ROLE_ID.VERIFIED);
         const isCurrentUWStudent = roles.has(env.ROLE_ID.CURRENT_UW_STUDENT);
         if (!isCurrentUWStudent || !isVerified) {
@@ -458,8 +471,8 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
         // Check if the user has a verified WatIAM in the sheet
-        await addMissingFieldsToLegacyRow(interaction.member);
-        const userId = interaction.member.id;
+        await addMissingFieldsToLegacyRow(interaction.member as GuildMember);
+        const userId = (interaction.member as GuildMember).id;
         const row = await sheet.findRowByKeyValue('discord_id', userId);
         if (!row) {
             await interaction.reply({
@@ -480,7 +493,7 @@ client.on('interactionCreate', async (interaction) => {
             .setURL(link)
             .setLabel('Manage Membership')
             .setStyle(ButtonStyle.Link);
-        const actionRow = new ActionRowBuilder().addComponents(manageButton);
+        const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(manageButton);
         await interaction.reply({
             embeds: [embed],
             components: [actionRow],
@@ -500,13 +513,15 @@ client.once('ready', async () => {
 
 
 // Membership management routes
-const getDataByEncryptedUserIdAndExpiry = async (encryptedUserIdAndExpiry, res) => {
+const getDataByEncryptedUserIdAndExpiry = async (encryptedUserIdAndExpiry: string | undefined, res: express.Response) => {
     const userIdAndExpiry = decryptUserId(encryptedUserIdAndExpiry);
     if (!userIdAndExpiry) {
         res.send(getTemplate('error', { message: 'Invalid membership management link. It may be corrupted. Please use <code>/manage_membership</code> in the server to get a new link.' }));
         return null;
     }
-    const [userId, expiry] = userIdAndExpiry.split('-');
+    const userId = userIdAndExpiry.split('-')[0];
+    const expiry = parseInt(userIdAndExpiry.split('-')[1]);
+
     
     if (!userId) {
         res.send(getTemplate('error', { message: 'Invalid membership management link. It may be corrupted. Please use <code>/manage_membership</code> in the server to get a new link.' }));
@@ -526,7 +541,7 @@ const getDataByEncryptedUserIdAndExpiry = async (encryptedUserIdAndExpiry, res) 
 }
 
 // membership management page
-app.get('/membership/:encryptedUserIdAndExpiry', async (req, res) => {
+app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, res: express.Response): Promise<any> => {
     const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
     
     const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
@@ -555,7 +570,7 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req, res) => {
 });
 
 // link osu account oauth redirect
-app.get('/membership/:encryptedUserIdAndExpiry/link-osu-account', async (req, res) => {
+app.get('/membership/:encryptedUserIdAndExpiry/link-osu-account', async (req: express.Request, res: express.Response): Promise<any> => {
     const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
     
     const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
@@ -581,9 +596,9 @@ app.get('/membership/:encryptedUserIdAndExpiry/link-osu-account', async (req, re
 });
 
 // osu oauth callback
-app.get('/osu-auth-callback', async (req, res) => {
+app.get('/osu-auth-callback', async (req: express.Request, res: express.Response): Promise<any> => {
     const { code, state } = req.query;
-    const encryptedUserIdAndExpiry = state;
+    const encryptedUserIdAndExpiry = state as string;
 
     const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
     if (!reqData) return;
@@ -646,7 +661,7 @@ app.get('/osu-auth-callback', async (req, res) => {
 });
 
 // unlink osu account
-app.post('/membership/:encryptedUserIdAndExpiry/unlink-osu-account', async (req, res) => {
+app.post('/membership/:encryptedUserIdAndExpiry/unlink-osu-account', async (req: express.Request, res: express.Response): Promise<any> => {
     const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
     
     const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
@@ -692,7 +707,7 @@ app.post('/membership/:encryptedUserIdAndExpiry/unlink-osu-account', async (req,
 });
 
 // Update display on website status
-app.post('/membership/:encryptedUserIdAndExpiry/update-display-on-website', async (req, res) => {
+app.post('/membership/:encryptedUserIdAndExpiry/update-display-on-website', async (req: express.Request, res: express.Response): Promise<any> => {
     const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
     
     const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);

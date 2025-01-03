@@ -11,10 +11,15 @@
     "nodemailer": "^6.9.16"
   },
   "devDependencies": {
-    "tsx": "^4.19.2"
+    "@types/crypto-js": "^4.2.2",
+    "@types/express": "^5.0.0",
+    "@types/nodemailer": "^6.4.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
   },
   "type": "module",
   "scripts": {
-    "start": "tsx index.js"
+    "start": "tsx index.js",
+    "typecheck": "tsc"
   }
 }

@@ -1,6 +1,7 @@
 import env from './env.js';
 import { GoogleSpreadsheet } from 'google-spreadsheet';
-import { JWT } from 'google-auth-library'
+import { JWT } from 'google-auth-library';
+import { GoogleSpreadsheetRow } from 'google-spreadsheet';
 
 
 const SCOPES = [
@@ -25,22 +26,26 @@ console.log("Google Sheet integration loaded", doc.title);
 const memberSheet = doc.sheetsByIndex[0];
 
 // Functions to interact with the Google Sheet
-const findRowByKeyValue = async (key, value) => {
+const findRowByKeyValue = async (key: string, value: string) : Promise<GoogleSpreadsheetRow | null> => {
     const rows = await memberSheet.getRows();
-    return rows.find(row => row.get(key) === value);
+    return rows.find(row => row.get(key) === value) || null;
 };
 
-const findRowsByKeyValue = async (key, value) => {
+const findRowsByKeyValue = async (key: string, value: string) : Promise<GoogleSpreadsheetRow[]> => {
     const rows = await memberSheet.getRows();
     return rows.filter(row => row.get(key) === value);
 }
 
-const findRowByIndex = async (index) => {
+const findRowByIndex = async (index: number) : Promise<GoogleSpreadsheetRow> => {
     const rows = await memberSheet.getRows();
     return rows[index];
 }
 
-const tryFindRowsByMultipleKeyValues = async (keyValues) => {
+type KeyValuePair = [string, any];
+type KeyValuePairs = KeyValuePair[];
+
+
+const tryFindRowsByMultipleKeyValues = async (keyValues: KeyValuePairs) : Promise<GoogleSpreadsheetRow[]> => {
     const rows = await memberSheet.getRows();
     for (const [key, value] of keyValues) {
         if (value === undefined || value === null) {
@@ -54,12 +59,12 @@ const tryFindRowsByMultipleKeyValues = async (keyValues) => {
     return [];
 }
 
-const tryFindRowByMultipleKeyValues = async (keyValues) => {
+const tryFindRowByMultipleKeyValues = async (keyValues: KeyValuePairs) : Promise<GoogleSpreadsheetRow | null> => {
     const res = await tryFindRowsByMultipleKeyValues(keyValues);
     if (res.length > 0) {
         return res[0];
     } else {
-        return undefined;
+        return null;
     }
 }
 
@@ -67,26 +72,30 @@ const getAllRows = async () => {
     return await memberSheet.getRows();
 };
 
-const addRow = async (data) => {
+const addRow = async (data: any) => {
     // data is an object with keys corresponding to the columns
     // e.g. { name: 'meow', email: 'meow@nya.com' }
     return await memberSheet.addRow(data);
 }
 
-const updateRow = async (row, data) => {
+const updateRow = async (row: GoogleSpreadsheetRow, data: any) => {
     // data is an object with keys corresponding to the updated columns
     // e.g. { name: 'purr' }
     row.assign(data);
     await row.save();
 };
 
-const deleteRow = async (row) => {
+const deleteRow = async (row: GoogleSpreadsheetRow) => {
     await row.delete();
 };
 
 
 // Wrapped member management functions
-const addMember = async (discordId, discordUsername, watiam) => {
+const addMember = async (
+    discordId: string,
+    discordUsername: string,
+    watiam: string
+) => {
     const date = new Date();
     const isoTime = date.toISOString();
     const localTime = `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()} ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;

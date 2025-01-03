@@ -9,10 +9,15 @@ const transporter = nodemailer.createTransport({
         user: env.SMTP_EMAIL,
         pass: env.SMTP_PASSWORD
     },
-});
+} as any);
 
 // Function to send email
-export async function sendEmail(to, title, text, html) {
+export async function sendEmail(
+    to: string,
+    title: string,
+    text: string,
+    html: string
+) {
     const mailOptions = {
         from: '"osu!uwaterloo" <osu@clubs.wusa.ca>',
         to: to,

@@ -15,7 +15,7 @@ type ActionRowConstructor = () => ActionRowBuilder<any> | undefined;
 class Logger {
     private client: Client;
     private channel: string;
-    private colour: LoggerColors;
+    public colour: LoggerColors;
 
     constructor(client: Client) {
         this.client = client;

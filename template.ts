@@ -2,7 +2,11 @@ import fs from 'fs';
 
 const baseDir = './templates';
 
-export default function getTemplate(template, data = {}) {
+type TemplateData = {
+    [key: string]: any;
+};
+
+export default function getTemplate(template: string, data: TemplateData = {}): string {
     const templatePath = `${baseDir}/${template}.html`;
     if (!fs.existsSync(templatePath)) {
         throw new Error(`Template not found: ${template}`);
