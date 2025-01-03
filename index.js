@@ -143,7 +143,7 @@ app.post('/send-verification-email', async (req, res) => {
     // Update the verification pool
     verificationInfo.watiam = watiam;
     verificationInfo.emailSent = Date.now();
-    verificationPool.expiry = Date.now() + 60 * 60 * 1000;
+    verificationInfo.expiry = Date.now() + 60 * 60 * 1000;
 
     // Calculate the next retry time
     const retries = verificationInfo.retries ?? 0;
