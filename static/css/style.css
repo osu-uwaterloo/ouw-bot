@@ -208,7 +208,7 @@ body {
 	pointer-events: none;
 }
 .button.loading {
-	color: transparent;
+	color: transparent !important;
 }
 .button.loading::before {
 	width: 1em;
@@ -278,4 +278,61 @@ code {
 .card a:not(.button) {
 	color: var(--user-card-link-colour);
 	text-decoration: none;
+}
+
+.switch {
+	display: inline-block;
+	position: relative;
+	height: 1.5em;
+	margin: 0.5em 0;
+}
+
+.switch input {
+	opacity: 0;
+	width: 0;
+	height: 0;
+}
+.switch input+label {
+	display: block;
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 2.8em;
+	height: 1.5em;
+	background-color: #fff4;
+	border-radius: 1em;
+	transition: background-color 0.2s;
+	cursor: pointer;
+}
+.switch input:checked+label {
+	background-color: var(--accent-colour);
+}
+.switch input+label::after {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0.25em;
+	left: 0.25em;
+	width: 1em;
+	height: 1em;
+	background-color: var(--dark-text);
+	border-radius: 1em;
+	transition: transform 0.2s;
+}
+.switch input:checked+label::after {
+	width: 1.2em;
+	transform: translateX(1.1em);
+}
+
+.switch input+label+label {
+	margin-left: 3em;
+	line-height: 1.5em;
+	cursor: pointer;
+}
+.switch input:disabled+label {
+    opacity: 0.2;
+    cursor: default;
+}
+.switch input:disabled+label+label {
+	cursor: default;
 }

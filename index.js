@@ -7,7 +7,7 @@ import getTemplate from './template.js';
 import { sendEmail } from './email.js';
 import * as sheet from './spreadsheet.js';
 import Logger from './logging.ts';
-
+import * as utils from './utils.ts';
 
 const app = express();
 app.use(express.json());
@@ -160,10 +160,12 @@ app.post('/send-verification-email', async (req, res) => {
     verificationPool.set(userId, verificationInfo);
 
     // Logging
-    logger.verbose(verificationInfo.interaction.member, 'Sent a verification email', 'They have requested a verification email to verify.', [
-        { title: 'WatIAM (they provided)', value: watiam },
-        { title: 'Next Retry', value: nextRetry > 0 ? `<t:${Math.floor(nextRetry / 1000)}:R>` : 'Until the verification link expires' }
-    ]);
+    logger.verbose(verificationInfo.interaction.member, 'Sent a verification email', 'They have requested a verification email to verify.', embed => {
+        embed.addFields(
+            { name: 'WatIAM', value: watiam },
+            { name: 'Next Retry', value: nextRetry > 0 ? `<t:${Math.floor(nextRetry / 1000)}:R>` : 'Until the verification link expires' }
+        );
+    });
 
     // Send a success response
     res.send({
@@ -214,9 +216,11 @@ app.get('/email-verify/:encryptedUserId/:token', async (req, res) => {
     verificationPool.delete(userId);
 
     // Logging
-    logger.success(member, 'Has been verified', 'They have completed the email verification process and have been verified as a current UW student.', [{
-        title: 'WatIAM', value: verificationInfo.watiam
-    }]);
+    logger.success(member, 'Has been verified', 'They have completed the email verification process and have been verified as a current UW student.', embed => {
+        embed.addFields(
+            { name: 'WatIAM', value: verificationInfo.watiam }
+        );
+    });
 
     // Get a membership management link
     const key = `${userId}-${Date.now() + 24 * 60 * 60 * 1000}`;
@@ -541,11 +545,12 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req, res) => {
     // Send the membership management page
     res.send(getTemplate('membership', {
         token: encryptedUserIdAndExpiry,
+        membershipManagementBaseUrl: `${env.URL}/membership/${encryptedUserIdAndExpiry}`,
         discordId: userId,
         discordUsername: row.get('discord_username'),
         watiam: row.get('watiam') ?? 'Unknown',
         osuAccount: osuAccountId,
-        membershipManagementBaseUrl: `${env.URL}/membership/${encryptedUserIdAndExpiry}`,
+        displayOnWebsite: row.get('display_on_website') === 'true',
     }));
 });
 
@@ -610,12 +615,31 @@ app.get('/osu-auth-callback', async (req, res) => {
         }
     });
     const userData = await res3.json();
-    const osuAccountId = userData.id;
+    const osuAccountId = userData.id.toString();
 
     // Update the row
     await sheet.updateRow(row, {
         osu: `https://osu.ppy.sh/users/${osuAccountId}`
     });
+
+    // Logging
+    logger.info(null, 'Linked osu! account', 'They have linked their osu! account.', embed => {
+        embed.setAuthor({ name: `@${row.get('discord_username')}`, url: `https://discord.com/users/${userId}` });
+        embed.setFooter({ text: `ID: ${userId}` });
+        embed.setThumbnail(`https://a.ppy.sh/${osuAccountId}`);
+        embed.addFields(
+            { name: 'osu! UID', value: osuAccountId, inline: true },
+            { name: 'osu! username', value: userData.username, inline: true }
+        );
+    }, () => {
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setLabel('osu! Profile')
+                .setStyle(ButtonStyle.Link)
+                .setURL(`https://osu.ppy.sh/users/${osuAccountId}`)
+        );
+        return row;
+    } );
 
     // Redirect to the membership management page
     res.redirect(`${env.URL}/membership/${encryptedUserIdAndExpiry}`);
@@ -645,6 +669,22 @@ app.post('/membership/:encryptedUserIdAndExpiry/unlink-osu-account', async (req,
     // Delete the osu account from the row
     await sheet.updateRow(row, {
         osu: ''
+    });
+
+    // Logging
+    logger.info(null, 'Unlinked osu! account', 'They have unlinked their osu! account.', embed => {
+        embed.setAuthor({ name: `@${row.get('discord_username')}`, url: `https://discord.com/users/${userId}` });
+        embed.setFooter({ text: `ID: ${userId}` });
+        embed.setThumbnail(`https://a.ppy.sh/${osuAccountId}`);
+        embed.addFields({ name: 'osu! UID', value: osuAccountId });
+    }, () => {
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setLabel('osu! Profile')
+                .setStyle(ButtonStyle.Link)
+                .setURL(`https://osu.ppy.sh/users/${osuAccountId}`)
+        );
+        return row;
     });
 
     // Return success

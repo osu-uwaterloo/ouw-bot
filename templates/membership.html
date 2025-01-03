@@ -63,6 +63,8 @@
 				updateOsuAccountDisplay();
 				async function unlinkOsuAccount() {
 					if (confirm('Are you sure you want to unlink your osu! account?')) {
+						document.querySelector('#unlink-osu-account').disabled = true;
+						document.querySelector('#unlink-osu-account').classList.add('loading');
 						try {
 							const response = await fetch('{{ membershipManagementBaseUrl }}/unlink-osu-account', {
 								method: 'POST',
@@ -82,7 +84,62 @@
 							console.error(error);
 							alert(`An error occurred. Please try again later. Error: ${error}`);
 						}
+						document.querySelector('#unlink-osu-account').disabled = false;
+						document.querySelector('#unlink-osu-account').classList.remove('loading');
 					}
+				}
+			</script>
+		</div>
+		<div id="display-on-website" class="card">
+			<div class="card-title">Website Display</div>
+			<div class="card-body">
+				<p class="linked-website">You can choose whether to display your profile on the club website's <a href="https://osu.uwaterloo.ca/members" target="_blank">member</a> page.</p>
+				<div class="switch">
+					<input type="checkbox" id="display-on-website-switch">
+					<label for="display-on-website-switch"></label>
+					<label for="display-on-website-switch">Display my profile on club website</label>
+				</div>
+			</div>
+			<div class="card-actions">
+				<button class="button" disabled id="update-display-on-website" onclick="submitDisplayOnWebsite()">Update</button>
+			</div>
+			<script>
+				let displayOnWebsite = '{{ displayOnWebsite }}' === 'true';
+				document.querySelector('#display-on-website-switch').checked = displayOnWebsite;
+				
+				let displayOnWebsiteNew = displayOnWebsite;
+				document.querySelector('#display-on-website-switch').addEventListener('change', () => {
+					displayOnWebsiteNew = document.querySelector('#display-on-website-switch').checked;
+					updateDisplayOnWebsite();
+				});
+				const updateDisplayOnWebsite = () => {
+					document.querySelector('#update-display-on-website').disabled = displayOnWebsite === displayOnWebsiteNew;
+				};
+				
+				async function submitDisplayOnWebsite() {
+					document.querySelector('#update-display-on-website').disabled = true;
+					document.querySelector('#update-display-on-website').classList.add('loading');
+					try {
+						const response = await fetch('{{ membershipManagementBaseUrl }}/update-display-on-website', {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+							},
+							body: JSON.stringify({ token, displayOnWebsite: displayOnWebsiteNew }),
+						});
+						const json = await response.json();
+						if (json.status === 'success') {
+							displayOnWebsite = displayOnWebsiteNew;
+							updateDisplayOnWebsite();
+						} else {
+							alert(json.message);
+						}
+					} catch (error) {
+						console.error(error);
+						alert(`An error occurred. Please try again later. Error: ${error}`);
+					}
+					document.querySelector('#update-display-on-website').disabled = false;
+					document.querySelector('#update-display-on-website').classList.remove('loading');
 				}
 			</script>
 		</div>

@@ -10,5 +10,11 @@
     "google-spreadsheet": "^4.1.4",
     "nodemailer": "^6.9.16"
   },
-  "type": "module"
+  "devDependencies": {
+    "tsx": "^4.19.2"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "tsx index.js"
+  }
 }
