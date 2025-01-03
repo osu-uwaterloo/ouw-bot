@@ -6,7 +6,7 @@ import { encryptUserId, decryptUserId, generateRandomToken } from './encryption.
 import getTemplate from './template.js';
 import { sendEmail } from './email.js';
 import * as sheet from './spreadsheet.js';
-import Logger from './logging.js';
+import Logger from './logging.ts';
 
 
 const app = express();
