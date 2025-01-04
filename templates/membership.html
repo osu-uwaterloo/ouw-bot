@@ -135,16 +135,217 @@
 							updateDisplayOnWebsite();
 						} else {
 							alert(json.message);
+							document.querySelector('#update-display-on-website').disabled = false;
 						}
 					} catch (error) {
 						console.error(error);
 						alert(`An error occurred. Please try again later. Error: ${error}`);
+						document.querySelector('#update-display-on-website').disabled = false;
 					}
 					document.querySelector('#update-display-on-website').classList.remove('loading');
 					document.querySelector('#display-on-website-switch').disabled = false;
 				}
 			</script>
 		</div>
-    </div>
+		<div id="social-links" class="card">
+			<div class="card-title">Social Links</div>
+			<div class="card-body">
+				<p class="linked-website">If you wish, you can add your social links to be displayed on the club website!</p>
+				<p class="note">This section will only take effect if you have choose to display your profile on the club website in the previous section.</p>
+				<div class="social-link-list">
+				</div>
+			</div>
+			<div class="card-actions">
+				<button class="button" disabled id="update-social-links" onclick="submitSocialLinks()">Update</button>
+			</div>
+			<script>
+				const socialMedia = {{ socialMedia }};
+				/*const socialMedia = [
+					{
+						id: "discord",
+						name: "Discord",
+						description: "Username",
+						value: "meow",
+						enabled: true,
+						immutable: true,
+						regex: "^[a-zA-Z0-9_]{2,32}$"
+					},
+					{
+						id: "personal-website",
+						name: "Personal Website",
+						description: "URL (with http(s)://)",
+						value: "",
+						enabled: false,
+						regex: "^(https?://)?([a-zA-Z0-9]+\\.)?[a-zA-Z0-9][a-zA-Z0-9-]+\\.[a-zA-Z]{2,6}(\\.[a-zA-Z]{2,6})?(/.*)?$"
+					},
+					{
+						id: "github",
+						name: "GitHub",
+						description: "Username",
+						value: "asdasd",
+						enabled: true,
+						regex: "^[a-zA-Z0-9-]{1,39}$"
+					},
+					{
+						id: "twitch",
+						name: "Twitch",
+						description: "Username",
+						value: "",
+						enabled: false,
+						regex: "^[a-zA-Z0-9_]{4,25}$"
+					},
+					{
+						id: "youtube",
+						name: "YouTube",
+						description: "Channel Handle",
+						value: "",
+						enabled: false,
+						regex: "^[a-zA-Z0-9_]{1,39}$"
+					}
+				];*/
+				const escapeHtml = (unsafe) => {
+					return unsafe
+						.replace(/&/g, "&amp;")
+						.replace(/</g, "&lt;")
+						.replace(/>/g, "&gt;")
+						.replace(/"/g, "&quot;")
+						.replace(/'/g, "&#039;");
+				};
+				let socialLinks = {};
+				for (let item of socialMedia) {
+					if (!item.enabled) item.enabled = false;
+					if (!item.value) item.value = '';
+					let html = `
+					<div class="social-link-item" data-id="${item.id}">
+						<div class="social-link-item-header">
+							<div class="social-link-item-name">${item.name}</div>
+							<div class="social-link-item-description ${item.value ? '' : 'hide'}">${item.description}</div>
+							<div class="switch">
+								<input type="checkbox" class="social-link-item-switch" id="social-link-item-switch-${item.id}" ${item.enabled ? 'checked' : ''}>
+								<label for="social-link-item-switch-${item.id}"></label>
+							</div>
+						</div>
+						<div class="social-link-item-body ${item.enabled ? '' : 'hide'}">
+							<input class="textfield social-link-item-input" ${item.immutable ? 'disabled' : ''} type="text" id="social-link-${item.id}" placeholder="${item.description}" value="${escapeHtml(item.value)}">
+						</div>
+					</div>
+					`;
+					const template = document.createElement('template');
+					template.innerHTML = html.trim();
+					document.querySelector('.social-link-list').appendChild(template.content.firstChild);
+					if (item.enabled) {
+						socialLinks[item.id] = item.value;
+					} else if (item.immutable) {
+						socialLinks[item.id] = '';
+					}
+				}
+				if (!structuredClone) window.structuredClone = (obj) => JSON.parse(JSON.stringify(obj));
+				let socialLinksNew = structuredClone(socialLinks);
+				const updateSocialLinksButton = () => {
+					// Check if changed
+					let changed = false;
+					for (let key in socialLinks) {
+						if (socialLinks[key] !== socialLinksNew[key]) {
+							changed = true;
+							break;
+						}
+					}
+					for (let key in socialLinksNew) {
+						if (socialLinks[key] !== socialLinksNew[key]) {
+							changed = true;
+							break;
+						}
+					}
+					if (!changed) {
+						document.querySelector('#update-social-links').disabled = true;
+						return;
+					}
+					// Validate
+					for (let key in socialLinksNew) {
+						const item = socialMedia.find((item) => item.id === key);
+						const value = socialLinksNew[key];
+						if (!item.immutable && !new RegExp(item.regex).test(value)) {
+							document.querySelector('#update-social-links').disabled = true;
+							return;
+						}
+					}
+					document.querySelector('#update-social-links').disabled = false;
+				};
+				document.querySelectorAll('.social-link-item').forEach((container) => {
+					const itemId = container.dataset.id;
+					const switcher = container.querySelector('.social-link-item-switch');
+					const body = container.querySelector('.social-link-item-body');
+					const input = container.querySelector('.social-link-item-input');
+					const description = container.querySelector('.social-link-item-description');
+					
+					const item = socialMedia.find((item) => item.id === itemId);
+
+					const update = () => {
+						const value = input.value.trim();
+						if (item.immutable) {
+							socialLinksNew[item.id] = switcher.checked ? item.value : '';
+						} else if (!switcher.checked || value === '') {
+							delete socialLinksNew[item.id];
+						} else {
+							socialLinksNew[item.id] = value;
+						}
+						updateSocialLinksButton();
+					};
+					
+					switcher.addEventListener('change', () => {
+						body.classList.toggle('hide', !switcher.checked);
+						description.classList.toggle('hide', !switcher.checked || (switcher.checked && input.value === ''));
+						update();
+					});
+					input.addEventListener('input', () => {
+						const value = input.value.trim();
+						description.classList.toggle('hide', value === '');
+						update();
+					});
+					input.addEventListener('change', () => {
+						const value = input.value.trim();
+						input.value = value;
+						input.classList.toggle('error', value !== '' && !new RegExp(item.regex).test(value));
+						update();
+					});
+				});
+				
+				async function submitSocialLinks() {
+					document.querySelectorAll('.social-link-item').forEach((container) => {
+						if (container.querySelector('.social-link-item-input').value.trim() === '') {
+							container.querySelector('.social-link-item-switch').checked = false;
+						}
+					});
+					document.querySelector('#update-social-links').disabled = true;
+					document.querySelector('#update-social-links').classList.add('loading');
+					document.querySelector('.social-link-list').classList.add('updating');
+					try {
+						const response = await fetch('{{ membershipManagementBaseUrl }}/update-social-links', {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+							},
+							body: JSON.stringify({ token, socialLinks: socialLinksNew }),
+						});
+						const json = await response.json();
+						if (json.status === 'success') {
+							socialLinks = structuredClone(socialLinksNew);
+							updateSocialLinksButton();
+						} else {
+							alert(json.message);
+							document.querySelector('#update-social-links').disabled = false;
+						}
+					} catch (error) {
+						console.error(error);
+						alert(`An error occurred. Please try again later. Error: ${error}`);
+						document.querySelector('#update-social-links').disabled = false;
+					}
+					document.querySelector('#update-social-links').classList.remove('loading');
+					document.querySelector('.social-link-list').classList.remove('updating');
+				}
+			</script>
+		</div>
+	</div>
+</div>
 </body>
 </html>

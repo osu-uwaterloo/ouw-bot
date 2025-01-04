@@ -151,7 +151,7 @@ body {
 	color: currentColor;
 	font-family: inherit;
 	width: 100%;
-	transition: border-bottom-width 0.2s;
+	transition: border-bottom-width 0.2s, border-bottom-color 0.2s;
 }
 .textfield.big {
 	font-size: 1.25em;
@@ -162,6 +162,9 @@ body {
 }
 .textfield:focus {
 	border-bottom-width: 3px;
+}
+.textfield.error {
+	border-bottom-color: #f44336;
 }
 
 .button {
@@ -285,6 +288,7 @@ code {
 	position: relative;
 	height: 1.5em;
 	margin: 0.5em 0;
+	min-width: 2.8em;
 }
 
 .switch input {
@@ -335,4 +339,49 @@ code {
 }
 .switch input:disabled+label+label {
 	cursor: default;
+}
+
+
+/* social links in member management page */
+.social-link-list {
+	transition: opacity 0.2s;
+}
+.social-link-list.updating {
+	opacity: 0.5;
+	pointer-events: none;
+	user-select: none;
+}
+.social-link-item-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.social-link-item-name {
+    font-size: 1.2em;
+    font-weight: bold;
+    margin-right: 12px;
+}
+
+.social-link-item-description {
+    flex: 1;
+	transition: opacity 0.2s;
+}
+
+.social-link-item-description.hide {
+	opacity: 0;
+	user-select: none;
+	pointer-events: none;
+}
+
+.social-link-item-body {
+    overflow: hidden;
+	height: 2.5em;
+    max-height: 2.5em;
+    transition: max-height 0.2s ease;
+}
+.social-link-item-body.hide {
+	max-height: 0;
+	pointer-events: none;
+	user-select: none;
 }

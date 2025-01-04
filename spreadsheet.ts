@@ -21,7 +21,7 @@ const doc = new GoogleSpreadsheet(env.GOOGLE_SHEET_ID, jwt);
 
 await doc.loadInfo();
 
-console.log("Google Sheet integration loaded", doc.title);
+console.log(`Google Sheet integration loaded, sheet name: ${doc.title}`);
 
 const memberSheet = doc.sheetsByIndex[0];
 

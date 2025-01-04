@@ -488,7 +488,7 @@ client.on('interactionCreate', async (interaction) => {
         const embed = new EmbedBuilder()
             .setColor('#5865f2')
             .setTitle('Manage Membership')
-            .setDescription(`Click the button below to manage your membership`);
+            .setDescription(`Click the button below to manage your membership. This link will expire <t:${Math.floor(expiry / 1000)}:R>`);
         const manageButton = new ButtonBuilder()
             .setURL(link)
             .setLabel('Manage Membership')
@@ -540,6 +540,56 @@ const getDataByEncryptedUserIdAndExpiry = async (encryptedUserIdAndExpiry: strin
     return { userId, expiry, row };
 }
 
+// Member social media related types and constants
+// TODO: move these to a separate file
+
+// Update social media links
+type SocialMediaField = {
+    id: string,
+    name: string,
+    description: string,
+    regex: string,
+    immutable?: boolean
+};
+// SocialLink is SocialMediaField with actual value
+type SocialLink = SocialMediaField & {
+    enabled?: boolean,
+    value?: string
+};
+// Pre-defined social media fields
+const socialMediaFields: SocialMediaField[] = [
+    {
+        id: "discord",
+        name: "Discord",
+        description: "Username",
+        regex: "^[a-zA-Z0-9_]{2,32}$"
+    },
+    {
+        id: "personal-website",
+        name: "Personal Website",
+        description: "URL (with http(s)://)",
+        regex: "^(https?://)?([a-zA-Z0-9]+\\.)?[a-zA-Z0-9][a-zA-Z0-9-]+\\.[a-zA-Z]{2,6}(\\.[a-zA-Z]{2,6})?(/.*)?$"
+    },
+    {
+        id: "github",
+        name: "GitHub",
+        description: "Username",
+        regex: "^[a-zA-Z0-9-]{1,39}$"
+    },
+    {
+        id: "twitch",
+        name: "Twitch",
+        description: "Username",
+        regex: "^[a-zA-Z0-9_]{4,25}$"
+    },
+    {
+        id: "youtube",
+        name: "YouTube",
+        description: "Channel Handle",
+        regex: "^[a-zA-Z0-9_]{1,39}$"
+    }
+];
+
 // membership management page
 app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, res: express.Response): Promise<any> => {
     const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
@@ -557,6 +607,51 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, re
         osuAccountId = rawOsu.match(/\d+/)[0];
     }
 
+    // Generate social links json
+    const socialLinksInSheetJson = (() => {
+        const raw = row.get('social_links');
+        if (!raw) return {};
+        try {
+            return JSON.parse(raw);
+        } catch (error) {
+            return {};
+        }
+    })();
+
+    const socialLinks: SocialLink[] = socialMediaFields.map(field => {
+        if (field.id === 'discord') {
+            const discordUsername = row.get('discord_username') ?? '';
+            // If there is a discord username in record, use it and make it immutable
+            if (discordUsername) {
+                return {
+                    ...field,
+                    enabled: socialLinksInSheetJson['discord'] !== '',
+                    value: discordUsername,
+                    immutable: true
+                };
+            }
+
+            return {
+                ...field,
+                enabled: true,
+                value: discordUsername
+            };
+        }
+        if (socialLinksInSheetJson[field.id]) {
+            return {
+                ...field,
+                enabled: true,
+                value: socialLinksInSheetJson[field.id]
+            };
+        } else {
+            return {
+                ...field,
+                enabled: false
+            };
+        }
+    });
+    
+
     // Send the membership management page
     res.send(getTemplate('membership', {
         token: encryptedUserIdAndExpiry,
@@ -565,7 +660,8 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, re
         discordUsername: row.get('discord_username'),
         watiam: row.get('watiam') ?? 'Unknown',
         osuAccount: osuAccountId,
-        displayOnWebsite: utils.parseHumanBool(row.get('display_on_website'), false)
+        displayOnWebsite: utils.parseHumanBool(row.get('display_on_website'), false),
+        socialMedia: JSON.stringify(socialLinks)
     }));
 });
 
@@ -722,6 +818,55 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-display-on-website', asyn
     // Return success
     res.send({ status: 'success' });
 });
+
+// Update social media links
+app.post('/membership/:encryptedUserIdAndExpiry/update-social-links', async (req: express.Request, res: express.Response): Promise<any> => {
+    const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
+    
+    const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
+    if (!reqData) return;
+    const { userId, expiry, row } = reqData;
+
+    const socialLinks = req.body.socialLinks;
+
+    // Validate
+    for (const key in socialLinks) {
+        const field = socialMediaFields.find(field => field.id === key);
+        const value = socialLinks[key];
+        if (!field) {
+            return res.send({ status: 'error', message: `Invalid social media field: ${key}` });
+        }
+        if (typeof value !== 'string') {
+            return res.send({ status: 'error', message: `Invalid value for ${field.name}` });
+        }
+        if (key === 'discord') {
+            // Special check for discord later
+            continue;
+        }
+        if (!value.match(new RegExp(field.regex))) {
+            return res.send({ status: 'error', message: `Invalid value for ${field.name}` });
+        }
+    }
+    // Validate discord username
+    if (socialLinks['discord']) {
+        const discordUsername = socialLinks['discord'];
+        const discordUsernameInSheet = row.get('discord_username') ?? '';
+        if (discordUsernameInSheet && discordUsername !== discordUsernameInSheet && discordUsername !== '') {
+            return res.send({ status: 'error', message: 'Invalid value for Discord username.' });
+        } else if (!discordUsernameInSheet && !discordUsername.match(new RegExp(socialMediaFields.find(field => field.id === 'discord')!.regex))) {
+            return res.send({ status: 'error', message: 'Invalid value for Discord username.' });
+        }
+    }
+
+    // Update the row
+    await sheet.updateRow(row, {
+        social_links: JSON.stringify(socialLinks)
+    });
+
+    // Return success
+    res.send({ status: 'success' });
+});
+
 
 // Start the server
 app.listen(PORT, () => {
