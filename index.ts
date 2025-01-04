@@ -8,7 +8,11 @@ import {
     ChatInputCommandInteraction,
     ApplicationCommandOptionType,
     Role,
-    Guild
+    Guild,
+    ContextMenuCommandBuilder,
+    ApplicationCommandType,
+    ContextMenuCommandType,
+    InteractionContextType
 } from 'discord.js';
 import express from 'express';
 import env from './env.js';
@@ -280,7 +284,7 @@ async function setupVerificationButtonMessage(message: Message) {
         .setDescription(`
           # Verification
           
-          In order to chat in this server, you must be given the @Verified tag.
+          In order to chat in this server, you must be given the <@&${env.ROLE_ID.VERIFIED}> tag.
 
           ## You are a UWaterloo student
 
@@ -960,6 +964,7 @@ async function onSlashCommandSetNameColour(interaction: ChatInputCommandInteract
             content: `Your name colour has been set to \`${hex}\`.`,
             ephemeral: true
         });
+        logger.info(member, 'Set custom name colour', `Set their name colour to ${hex}.\nColour role: <@&${topColourRole.id}>`);
         return;
     }
 
@@ -972,6 +977,7 @@ async function onSlashCommandSetNameColour(interaction: ChatInputCommandInteract
             content: `Your name colour has been set to \`${hex}\`.`,
             ephemeral: true
         });
+        logger.info(member, 'Set custom name colour', `Set their name colour to ${hex}.\nColour role: <@&${availableRole.id}>`);
         return;
     } else {
         const newRole = await guild.roles.create({
@@ -985,6 +991,7 @@ async function onSlashCommandSetNameColour(interaction: ChatInputCommandInteract
             content: `Your name colour has been set to \`${hex}\`.`,
             ephemeral: true
         });
+        logger.info(member, 'Set custom name colour', `Set their name colour to ${hex}.\nColour role: <@&${newRole.id}>`);
         return;
     }
 }
@@ -1037,6 +1044,7 @@ const onSlashCommandRemoveNameColour = async (interaction: ChatInputCommandInter
             content: 'Your custom name colour has been reverted to the default.',
             ephemeral: true
         });
+        logger.info(member, 'Remove custom name colour', 'Removed their custom name colour.');
     } else {
         await interaction.reply({
             content: 'You do not have a custom name colour to remove. If you want to set one, use `/name_colour set`.',
@@ -1068,8 +1076,8 @@ async function setupColourRolesMessage(message: Message) {
 }
 
 
-// Slash commands
-// Register slash command
+// Slash commands and context menu
+// Register slash command and context menu
 client.once('ready', async () => {
     const guild = await client.guilds.fetch(env.SERVER_ID);
     await guild.commands.create({
@@ -1102,6 +1110,22 @@ client.once('ready', async () => {
             }
         ]
     });
+    await guild.commands.create(
+        new ContextMenuCommandBuilder()
+            .setName('give_verified_role')
+            .setNameLocalization('en-US', 'Give Verified Role')
+            .setType(ApplicationCommandType.User as ContextMenuCommandType)
+            .setContexts(InteractionContextType.Guild)
+            .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+    );
+    await guild.commands.create(
+        new ContextMenuCommandBuilder()
+            .setName('give_verified_uw_student_role')
+            .setNameLocalization('en-US', 'Give Verified & UW Student Role')
+            .setType(ApplicationCommandType.User as ContextMenuCommandType)
+            .setContexts(InteractionContextType.Guild)
+            .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+    );
 });
             
         
@@ -1120,6 +1144,38 @@ client.on('interactionCreate', async (interaction) => {
         } else if (subcommand === 'remove') {
             await onSlashCommandRemoveNameColour(interaction as ChatInputCommandInteraction);
         }
+    }
+});
+
+// Handle context menu
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isUserContextMenuCommand()) return;
+
+    const { commandName } = interaction;
+    const member = interaction.member as GuildMember;
+    const targetMember = interaction.targetMember as GuildMember;
+
+    if (commandName === 'give_verified_role' || commandName === 'give_verified_uw_student_role') {
+        if (!member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+            await interaction.reply({
+                content: 'You do not have permission to use this command.',
+                ephemeral: true
+            });
+            return;
+        }
+        let rolesAdded = `<@&${env.ROLE_ID.VERIFIED}>`;
+        await targetMember.roles.add(env.ROLE_ID.VERIFIED);
+        if (commandName === 'give_verified_uw_student_role') {
+            await targetMember.roles.add(env.ROLE_ID.CURRENT_UW_STUDENT);
+            rolesAdded += ` and <@&${env.ROLE_ID.CURRENT_UW_STUDENT}>`;
+        }
+        await interaction.reply({
+            content: `Role ${rolesAdded} has been given to <@${targetMember.id}>.`,
+            ephemeral: true
+        });
+
+        // Logging
+        logger.info(targetMember, 'Role given', `Role ${rolesAdded} has been given to <@${targetMember.id}>, by <@${member.id}>.`);
     }
 });
 
