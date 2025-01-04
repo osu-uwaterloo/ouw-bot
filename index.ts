@@ -5,7 +5,10 @@ import {
     TextChannel,
     MessageCreateOptions,
     InteractionReplyOptions,
-    ChatInputCommandInteraction
+    ChatInputCommandInteraction,
+    ApplicationCommandOptionType,
+    Role,
+    Guild
 } from 'discord.js';
 import express from 'express';
 import env from './env.js';
@@ -28,7 +31,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.MessageContent,
     ]
 });
 
@@ -36,7 +39,7 @@ const logger = new Logger(client);
 
 interface verificationInfo {
     timestamp: number,
-    interaction: Interaction, // The interaction context,
+    interaction: BotInteraction, // The interaction context,
     expiry: number, // The timestamp when the verification link expires
     watiam?: string, // The watiam of the user
     emailSent?: number, // The timestamp when the email was sent, if not sent, it's undefined,
@@ -212,7 +215,8 @@ app.get('/email-verify/:encryptedUserId/:token', async (req: express.Request, re
     await member.roles.add(env.ROLE_ID.CURRENT_UW_STUDENT);
 
     // Send a success message to the user
-    sendExclusiveMessage('You have been successfully verified! Welcome to osu!uwaterloo.', member);
+    //sendExclusiveMessage('You have been successfully verified! Welcome to osu!uwaterloo!', member);
+    verificationInfo.interaction.followUp({ content: 'You have been successfully verified! Welcome to osu!uwaterloo!', ephemeral: true });
 
     // Update the sheet
     try {
@@ -270,7 +274,7 @@ client.on('guildMemberAdd', async (member) => {
 });
 
 // Setup verification button in announcements
-async function setupVerificationButton(message: Message) {
+async function setupVerificationButtonMessage(message: Message) {
     const embed = new EmbedBuilder()
         .setColor('#feeb1d')
         .setDescription(`
@@ -299,20 +303,6 @@ async function setupVerificationButton(message: Message) {
         components: [row]
     });
 }
-
-// Handle button interactions
-client.on('interactionCreate', async (interaction: Interaction) => {
-    if (!interaction.isButton()) return;
-
-    const action = interaction.customId;
-    
-    switch (action) {
-        case 'verify_request':
-            await onVerifyRequest(interaction);
-            break;
-    }
-});
-
 
 async function onVerifyRequest(interaction: ButtonInteraction) {
     // get all the roles of the user
@@ -421,14 +411,9 @@ async function sendExclusiveMessage(message: string | MessageCreateOptions | Int
     return false;
 }
 
-// Command to setup the verification button in announcements
-client.on('messageCreate', async (message) => {
-    if (message.content === '!setupverify' && 
-        message.member!.permissions.has(PermissionFlagsBits.Administrator)) {
-        await setupVerificationButton(message);
-    }
-});
-
+// The sheet has 2 fields: discord_id and discord_username
+// We mainly use discord_id to identify the user, but the old entries only have discord_username
+// This function will add whatever missing fields to the row
 async function addMissingFieldsToLegacyRow(member: GuildMember, row: GoogleSpreadsheetRow | null = null) : Promise<boolean> {
     const userId = member.id;
     const username = member.user.username;
@@ -452,64 +437,49 @@ async function addMissingFieldsToLegacyRow(member: GuildMember, row: GoogleSprea
     }
 }
 
-// Slash command to manage membership
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isCommand()) return;
-
-    const { commandName } = interaction;
-
-    if (commandName === 'manage_membership') {
-        // Check if the user has the verified role
-        const roles = (interaction.member!.roles as GuildMemberRoleManager).cache;
-        const isVerified = roles.has(env.ROLE_ID.VERIFIED);
-        const isCurrentUWStudent = roles.has(env.ROLE_ID.CURRENT_UW_STUDENT);
-        if (!isCurrentUWStudent || !isVerified) {
-            await interaction.reply({
-                content: 'You need to be a verified current UW student to manage your membership.',
-                ephemeral: true
-            });
-            return;
-        }
-        // Check if the user has a verified WatIAM in the sheet
-        await addMissingFieldsToLegacyRow(interaction.member as GuildMember);
-        const userId = (interaction.member as GuildMember).id;
-        const row = await sheet.findRowByKeyValue('discord_id', userId);
-        if (!row) {
-            await interaction.reply({
-                content: 'Please contact the club executives to get your data migrated. You have record with outdated discord username.',
-                ephemeral: true
-            });
-            return;
-        }
-        // Send the user a link to manage their membership
-        const expiry = Date.now() + 12 * 60 * 60 * 1000;
-        const key = `${userId}-${expiry}`;
-        const link = `${env.URL}/membership/${encryptUserId(key)}`;
-        const embed = new EmbedBuilder()
-            .setColor('#5865f2')
-            .setTitle('Manage Membership')
-            .setDescription(`Click the button below to manage your membership. This link will expire <t:${Math.floor(expiry / 1000)}:R>.`);
-        const manageButton = new ButtonBuilder()
-            .setURL(link)
-            .setLabel('Manage Membership')
-            .setStyle(ButtonStyle.Link);
-        const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(manageButton);
+// Manage membership slash command callback
+const onSlashCommandManageMembership = async (interaction: ChatInputCommandInteraction) => {
+    // Check if the user has the verified role
+    const roles = (interaction.member!.roles as GuildMemberRoleManager).cache;
+    const isVerified = roles.has(env.ROLE_ID.VERIFIED);
+    const isCurrentUWStudent = roles.has(env.ROLE_ID.CURRENT_UW_STUDENT);
+    if (!isCurrentUWStudent || !isVerified) {
         await interaction.reply({
-            embeds: [embed],
-            components: [actionRow],
+            content: 'You need to be a verified current UW student to manage your membership.',
             ephemeral: true
         });
+        return;
     }
-});
-
-// Register slash command
-client.once('ready', async () => {
-    const guild = await client.guilds.fetch(env.SERVER_ID);
-    await guild.commands.create({
-        name: 'manage_membership',
-        description: 'Manage my membership (osu! account connection, listing on website, etc.)'
+    // Check if the user has a verified WatIAM in the sheet
+    await addMissingFieldsToLegacyRow(interaction.member as GuildMember);
+    const userId = (interaction.member as GuildMember).id;
+    const row = await sheet.findRowByKeyValue('discord_id', userId);
+    if (!row) {
+        await interaction.reply({
+            content: 'Please contact the club executives to get your data migrated. You have record with outdated discord username.',
+            ephemeral: true
+        });
+        return;
+    }
+    // Send the user a link to manage their membership
+    const expiry = Date.now() + 12 * 60 * 60 * 1000;
+    const key = `${userId}-${expiry}`;
+    const link = `${env.URL}/membership/${encryptUserId(key)}`;
+    const embed = new EmbedBuilder()
+        .setColor('#5865f2')
+        .setTitle('Manage Membership')
+        .setDescription(`Click the button below to manage your membership. This link will expire <t:${Math.floor(expiry / 1000)}:R>.`);
+    const manageButton = new ButtonBuilder()
+        .setURL(link)
+        .setLabel('Manage Membership')
+        .setStyle(ButtonStyle.Link);
+    const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(manageButton);
+    await interaction.reply({
+        embeds: [embed],
+        components: [actionRow],
+        ephemeral: true
     });
-});
+}
 
 
 // Membership management routes
@@ -863,6 +833,323 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-social-links', async (req
     res.send({ status: 'success' });
 });
 
+
+// Server custom colour roles self-assign
+const getServerColourRoles = async (guild: Guild): Promise<{
+    range: [number, number] | null, // (startPosition, endPosition), exclusive
+    colourRoles: Role[]
+}> => {
+    let allServerRoles = await guild.roles.fetch();
+    allServerRoles = allServerRoles.sort((a, b) => b.position - a.position);
+    const array = Array.from(allServerRoles.values());
+    let startIndex = -1, endIndex = -1;
+    let startPosition = -1, endPosition = -1;
+    for (let i = 0; i < array.length; i++) {
+        const role = array[i];
+        if (role.id === env.COLOUR_ROLE_IDS.COLOUR_ROLE_SECTION_BEGIN) {
+            startIndex = i;
+            startPosition = role.position;
+            if (endIndex !== -1) break;
+        } else if (role.id === env.COLOUR_ROLE_IDS.COLOUR_ROLE_SECTION_END) {
+            endIndex = i;
+            endPosition = role.position;
+            if (startIndex !== -1) break;
+        }
+    }
+    // notice higher roles also have higher positions
+    if (startIndex === -1 || endIndex === -1) {
+        return { range: null, colourRoles: [] };
+    }
+    if (startIndex > endIndex) {
+        [startIndex, endIndex] = [endIndex, startIndex];
+        [startPosition, endPosition] = [endPosition, startPosition];
+    }
+    return {
+        range: [startPosition, endPosition],
+        colourRoles: array.slice(startIndex + 1, endIndex)
+    };
+}
+
+async function onSlashCommandSetNameColour(interaction: ChatInputCommandInteraction) {
+    // If the user is not verified, reject
+    const member = interaction.member as GuildMember;
+    const roles = member.roles.cache.sort((a, b) => b.position - a.position);
+    console.log('user roles:');
+    for (const role of roles.values()) {
+        console.log(role.name, role.color);
+    }
+    const isVerified = roles.has(env.ROLE_ID.VERIFIED);
+    if (!isVerified) {
+        await interaction.reply({
+            content: 'You need to be verified to set a custom name colour.',
+            ephemeral: true
+        });
+        return;
+    }
+
+    // Parse the hex colour
+    const hex = utils.parseHexColour(interaction.options.getString('hex', true));
+    if (!hex) {
+        await interaction.reply({
+            content: 'Please enter a valid hex colour code. Example: `#ff66ab`.',
+            ephemeral: true
+        });
+        return;
+    }
+
+    // TODO: Check if the hex colour has low contrast with the background
+
+    // Get server colour roles
+    const guild = interaction.guild!;
+    const {
+        range: serverColourRoleRange,
+        colourRoles: serverColourRoles
+    } = await getServerColourRoles(guild);
+    if (!serverColourRoleRange) {
+        await interaction.reply({
+            content: 'Server colour roles are not set up properly. Please contact the server administrators.',
+            ephemeral: true
+        });
+        return;
+    }
+    const [startPosition, endPosition] = serverColourRoleRange;
+
+    // Get member's top coloured role
+    let topColourRole = null;
+    for (const role of roles.values()) {
+        if (role.color !== 0) {
+            topColourRole = role;
+            break;
+        }
+    }
+
+    console.log(topColourRole?.name, topColourRole?.position, startPosition, endPosition);
+
+    // If top colour role is higher than the server colour roles, reject
+    if (topColourRole && topColourRole.position > startPosition) {
+        await interaction.reply({
+            content: 'You already have coloured role(s) that has higher priority than the server colour roles. Please contact an executive if you want to set a custom colour.',
+            ephemeral: true
+        });
+        return;
+    }
+
+    // If their colour role is in the server colour roles and has >= 2 people using it, remove it first
+    if (
+        topColourRole &&
+        topColourRole.position < startPosition && topColourRole.position > endPosition &&
+        topColourRole.members.size > 1
+    ) {
+        await member.roles.remove(topColourRole);
+        topColourRole = null;
+    }
+
+    // If their colour role is in the server colour roles and has 1 person using it, update it
+    if (
+        topColourRole &&
+        topColourRole.position < startPosition && topColourRole.position > endPosition &&
+        topColourRole.members.size === 1
+    ) {
+        const isHexName = topColourRole.name.match(/^#?[0-9a-fA-F]{6}$/);
+        if (isHexName) {
+            await topColourRole.edit({ name: hex, color: hex });
+        } else {
+            await topColourRole.edit({ color: hex });
+        }
+        await interaction.reply({
+            content: `Your name colour has been set to \`${hex}\`.`,
+            ephemeral: true
+        });
+        return;
+    }
+
+    // If they dont have a top colour role, or their top colour role is lower than the server colour roles
+    // try assigning an existing colour role, or create a new one
+    const availableRole = serverColourRoles.find(role => role.name.toLowerCase() === hex);
+    if (availableRole) {
+        await member.roles.add(availableRole);
+        await interaction.reply({
+            content: `Your name colour has been set to \`${hex}\`.`,
+            ephemeral: true
+        });
+        return;
+    } else {
+        const newRole = await guild.roles.create({
+            name: hex,
+            color: hex,
+            position: endPosition + 1,
+            reason: 'User requested a custom name colour through the bot'
+        });
+        await member.roles.add(newRole);
+        await interaction.reply({
+            content: `Your name colour has been set to \`${hex}\`.`,
+            ephemeral: true
+        });
+        return;
+    }
+}
+
+const onSlashCommandRemoveNameColour = async (interaction: ChatInputCommandInteraction) => {
+    // If the user is not verified, reject
+    const member = interaction.member as GuildMember;
+    const roles = member.roles.cache.sort((a, b) => b.position - a.position);
+    const isVerified = roles.has(env.ROLE_ID.VERIFIED);
+    if (!isVerified) {
+        await interaction.reply({
+            content: 'You need to be verified to remove your custom name colour.',
+            ephemeral: true
+        });
+        return;
+    }
+
+    // Get server colour roles
+    const guild = interaction.guild!;
+    const {
+        range: serverColourRoleRange,
+    } = await getServerColourRoles(guild);
+    if (!serverColourRoleRange) {
+        await interaction.reply({
+            content: 'Server colour roles are not set up properly. Please contact the server administrators.',
+            ephemeral: true
+        });
+        return;
+    }
+    const [startPosition, endPosition] = serverColourRoleRange;
+
+    // Get member's top coloured role
+    let topColourRole = null;
+    for (const role of roles.values()) {
+        if (role.color !== 0) {
+            topColourRole = role;
+            break;
+        }
+    }
+
+    // If their colour role is within the range of server colour roles, remove it
+    if (topColourRole && topColourRole.position < startPosition && topColourRole.position > endPosition) {
+        // If there is only 1 person using the role, delete it
+        if (topColourRole.members.size === 1) {
+            await topColourRole.delete();
+        } else {
+            await member.roles.remove(topColourRole);
+        }
+        await interaction.reply({
+            content: 'Your custom name colour has been reverted to the default.',
+            ephemeral: true
+        });
+    } else {
+        await interaction.reply({
+            content: 'You do not have a custom name colour to remove. If you want to set one, use `/name_colour set`.',
+            ephemeral: true
+        });
+        return;
+    }
+}
+
+async function setupColourRolesMessage(message: Message) {
+    const embed = new EmbedBuilder()
+        .setColor('#ff66ab')
+        .setDescription(`
+            # Name Colours
+            
+            You can customize your name colour by using the following commands:
+
+            ## \`/name_colour set [hex]\`
+            
+            to set your name colour to a custom hex colour code.
+            ## \`/name_colour remove\`
+            
+            to revert your name colour to the default.
+        `.replace(/^\s+/gm, '').trim());
+
+    return await (message.channel as TextChannel).send({
+        embeds: [embed],
+    });
+}
+
+
+// Slash commands
+// Register slash command
+client.once('ready', async () => {
+    const guild = await client.guilds.fetch(env.SERVER_ID);
+    await guild.commands.create({
+        name: 'manage_membership',
+        description: 'Manage my membership (osu! account connection, listing on website, etc.)'
+    });
+    await guild.commands.create({
+        name: 'name_colour',
+        description: 'Manage your name colour',
+        options: [
+            {
+                name: 'set',
+                description: 'Set your name colour as a custom hex colour code',
+                type: ApplicationCommandOptionType.Subcommand,
+                options: [
+                    {
+                        name: 'hex',
+                        description: 'The hex colour code',
+                        type: ApplicationCommandOptionType.String,
+                        required: true,
+                        max_length: 7,
+                        min_length: 3
+                    }
+                ]
+            },
+            {
+                name: 'remove',
+                description: 'Remove your custom name colour, reverting to the default',
+                type: ApplicationCommandOptionType.Subcommand
+            }
+        ]
+    });
+});
+            
+        
+// Handle slash commands
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isCommand()) return;
+
+    const { commandName } = interaction;
+
+    if (commandName === 'manage_membership') {
+        await onSlashCommandManageMembership(interaction as ChatInputCommandInteraction);
+    } else if (commandName === 'name_colour') {
+        const subcommand = (interaction as ChatInputCommandInteraction).options.getSubcommand();
+        if (subcommand === 'set') {
+            await onSlashCommandSetNameColour(interaction as ChatInputCommandInteraction);
+        } else if (subcommand === 'remove') {
+            await onSlashCommandRemoveNameColour(interaction as ChatInputCommandInteraction);
+        }
+    }
+});
+
+
+// Command to setup the special messages with admin permissions
+client.on('messageCreate', async (message) => {
+    if (!message.member!.permissions.has(PermissionFlagsBits.Administrator)) {
+        return;
+    }
+    if (message.content === '!setupverify') {
+        await setupVerificationButtonMessage(message);
+        await message.delete();
+    } else if (message.content === '!setupcolourroles') {
+        await setupColourRolesMessage(message);
+        await message.delete();
+    }
+});
+
+// Handle button interactions
+client.on('interactionCreate', async (interaction: Interaction) => {
+    if (!interaction.isButton()) return;
+
+    const action = interaction.customId;
+    
+    switch (action) {
+        case 'verify_request':
+            await onVerifyRequest(interaction);
+            break;
+    }
+});
 
 // Start the server
 app.listen(PORT, () => {

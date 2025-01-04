@@ -9,3 +9,18 @@ export const parseHumanBool = (str: string | boolean | null | undefined, default
 		return ['true', 'yes', 'y', '1', 't'].includes(str);
 	}
 }
+
+// parse hex colour to standard format (#fff, fff, fFf, 123456)
+type HexColourString = `#${string}`;
+export const parseHexColour = (str: string): HexColourString | null => {
+	if (!str) return null;
+	str = str.trim().toLowerCase();
+	str = str.replace(/^#/, '');
+	if (str.length === 3) {
+		str = str[0] + str[0] + str[1] + str[1] + str[2] + str[2];
+	}
+	if (!/^[0-9a-f]{6}$/.test(str)) {
+		return null;
+	}
+	return `#${str}`;	
+}
