@@ -482,13 +482,13 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
         // Send the user a link to manage their membership
-        const expiry = Date.now() + 24 * 60 * 60 * 1000;
+        const expiry = Date.now() + 12 * 60 * 60 * 1000;
         const key = `${userId}-${expiry}`;
         const link = `${env.URL}/membership/${encryptUserId(key)}`;
         const embed = new EmbedBuilder()
             .setColor('#5865f2')
             .setTitle('Manage Membership')
-            .setDescription(`Click the button below to manage your membership. This link will expire <t:${Math.floor(expiry / 1000)}:R>`);
+            .setDescription(`Click the button below to manage your membership. This link will expire <t:${Math.floor(expiry / 1000)}:R>.`);
         const manageButton = new ButtonBuilder()
             .setURL(link)
             .setLabel('Manage Membership')
@@ -618,23 +618,16 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, re
         }
     })();
 
-    const socialLinks: SocialLink[] = socialMediaFields.map(field => {
-        if (field.id === 'discord') {
-            const discordUsername = row.get('discord_username') ?? '';
-            // If there is a discord username in record, use it and make it immutable
-            if (discordUsername) {
-                return {
-                    ...field,
-                    enabled: socialLinksInSheetJson['discord'] !== '',
-                    value: discordUsername,
-                    immutable: true
-                };
-            }
+    const discordUsername = row.get('discord_username') ?? '';
 
+    const socialLinks: SocialLink[] = socialMediaFields.map(field => {
+        if (field.id === 'discord' && discordUsername) {
+            // If there is a discord username in record, use it and make it immutable
             return {
                 ...field,
-                enabled: true,
-                value: discordUsername
+                enabled: socialLinksInSheetJson['discord'] !== '',
+                value: discordUsername,
+                immutable: true
             };
         }
         if (socialLinksInSheetJson[field.id]) {
@@ -829,6 +822,9 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-social-links', async (req
 
     const socialLinks = req.body.socialLinks;
 
+    
+    const discordUsernameInSheet = row.get('discord_username') ?? '';
+
     // Validate
     for (const key in socialLinks) {
         const field = socialMediaFields.find(field => field.id === key);
@@ -839,8 +835,8 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-social-links', async (req
         if (typeof value !== 'string') {
             return res.send({ status: 'error', message: `Invalid value for ${field.name}` });
         }
-        if (key === 'discord') {
-            // Special check for discord later
+        if (key === 'discord' && discordUsernameInSheet) {
+            // If they have a discord username in record, special check for discord later
             continue;
         }
         if (!value.match(new RegExp(field.regex))) {
@@ -848,13 +844,13 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-social-links', async (req
         }
     }
     // Validate discord username
-    if (socialLinks['discord']) {
-        const discordUsername = socialLinks['discord'];
-        const discordUsernameInSheet = row.get('discord_username') ?? '';
-        if (discordUsernameInSheet && discordUsername !== discordUsernameInSheet && discordUsername !== '') {
+    if ('discord' in socialLinks && discordUsernameInSheet) {
+        const value = socialLinks['discord'];
+        if (value !== discordUsernameInSheet && value !== '') {
             return res.send({ status: 'error', message: 'Invalid value for Discord username.' });
-        } else if (!discordUsernameInSheet && !discordUsername.match(new RegExp(socialMediaFields.find(field => field.id === 'discord')!.regex))) {
-            return res.send({ status: 'error', message: 'Invalid value for Discord username.' });
+        }
+        if (value === discordUsernameInSheet) {
+            delete socialLinks['discord'];
         }
     }
 

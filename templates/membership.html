@@ -314,6 +314,7 @@
 					document.querySelectorAll('.social-link-item').forEach((container) => {
 						if (container.querySelector('.social-link-item-input').value.trim() === '') {
 							container.querySelector('.social-link-item-switch').checked = false;
+							container.querySelector('.social-link-item-body').classList.add('hide');
 						}
 					});
 					document.querySelector('#update-social-links').disabled = true;
