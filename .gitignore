@@ -1,5 +1,6 @@
 # env
 env.json
+env.prod.json
 .env
 
 # Logs
