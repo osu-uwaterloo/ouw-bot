@@ -902,7 +902,35 @@ async function onSlashCommandSetNameColour(interaction: ChatInputCommandInteract
         return;
     }
 
-    // TODO: Check if the hex colour has low contrast with the background
+    // Check if it is #000000
+    if (hex === '#000000') {
+        await interaction.reply({
+            content: 'Discord does not allow setting the name colour to black, as it represents the default colour (no colour) of the role. Please choose a different colour.',
+            ephemeral: true
+        });
+        return;
+    }
+
+    // Check colour contrast
+    const contrastDark = utils.calculateColourContrast(hex, '#313338');
+    const contrastLight = utils.calculateColourContrast(hex, '#ffffff');
+    if (contrastDark < 1.5 || contrastLight < 1.25) {
+        await interaction.reply({
+            content: `
+                The colour you have chosen does not have enough contrast with the background. Please choose a colour with better contrast.
+
+                WCAG Contrast Ratio:
+                **Dark Theme:** ${contrastDark.toFixed(2)} ${contrastDark >= 1.5 ? '✅' : '❌'} (>= 1.5 Required)
+                **Light Theme:** ${contrastLight.toFixed(2)} ${contrastLight >= 1.25 ? '✅' : '❌'} (>= 1.25 Required)
+
+                You can use [this tool](https://webaim.org/resources/contrastchecker/?fcolor=${contrastDark < 1.5 ? '313338' : 'ffffff'}&bcolor=${hex.slice(1)}) to check the contrast.
+
+                If you really want to use this colour, please contact an executive.
+            `.replace(/^\s+/gm, '').trim(),
+            ephemeral: true
+        });
+        return;
+    }
 
     // Get server colour roles
     const guild = interaction.guild!;
