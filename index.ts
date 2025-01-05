@@ -1421,6 +1421,7 @@ client.on('interactionCreate', async (interaction) => {
 client.on('interactionCreate', async (interaction) => {
     if (interaction.guildId !== env.SERVER_ID) return;
     if (!interaction.isContextMenuCommand()) return;
+    if (!interaction.guild) return;
     const isUserContextMenuCommand = interaction.isUserContextMenuCommand();
     const isMessageContextMenuCommand = interaction.isMessageContextMenuCommand();
 
@@ -1428,7 +1429,26 @@ client.on('interactionCreate', async (interaction) => {
     const targetMassage = isMessageContextMenuCommand ? interaction.targetMessage : null;
     const targetMember = isUserContextMenuCommand ?
                         (interaction as UserContextMenuCommandInteraction).targetMember:
-                        targetMassage?.member as GuildMember;
+                        targetMassage?.member ?? (
+                            targetMassage?.author.id ?
+                            await interaction.guild.members.fetch(targetMassage.author.id)
+                            : null
+                        );
+
+    if (!targetMember) {
+        await interaction.reply({
+            content: 'Cannot find the target user. They may have left the server.',
+            ephemeral: true
+        });
+        return;
+    }
+    if (targetMember.user.bot) {
+        await interaction.reply({
+            content: 'Cannot give roles to bots.',
+            ephemeral: true
+        });
+        return;
+    }
     const member = interaction.member as GuildMember;
 
     if (commandName === 'give_verified_role' || commandName === 'give_verified_uw_student_role') {
