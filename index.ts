@@ -14,7 +14,8 @@ import {
     ContextMenuCommandType,
     InteractionContextType,
     UserContextMenuCommandInteraction,
-    MessageContextMenuCommandInteraction
+    MessageContextMenuCommandInteraction,
+    PermissionsBitField
 } from 'discord.js';
 import express from 'express';
 import env from './env.js';
@@ -298,7 +299,7 @@ async function setupVerificationButtonMessage(message: Message) {
           ## You are not a UWaterloo student
 
           If you are not a Waterloo student, just let us know how you found your way here and if possible, who invited you, in #manual-verify channel. Ping @Club Executive after doing this and you’ll be given the role ASAP.`
-        .replace(/^\s+/gm, '').trim());
+        .replace(/^[ \t\r\f\v]+/gm, '').trim());
         
     const verifyButton = new ButtonBuilder()
         .setCustomId('verify_request')
@@ -914,19 +915,19 @@ async function onSlashCommandSetNameColour(interaction: ChatInputCommandInteract
     // Check colour contrast
     const contrastDark = utils.calculateColourContrast(hex, '#313338');
     const contrastLight = utils.calculateColourContrast(hex, '#ffffff');
-    if (contrastDark < 1.5 || contrastLight < 1.25) {
+    if (contrastDark < 2 || contrastLight < 1.25) {
         await interaction.reply({
             content: `
                 The colour you have chosen does not have enough contrast with the background. Please choose a colour with better contrast.
 
                 WCAG Contrast Ratio:
-                **Dark Theme:** ${contrastDark.toFixed(2)} ${contrastDark >= 1.5 ? '✅' : '❌'} (>= 1.5 Required)
+                **Dark Theme:** ${contrastDark.toFixed(2)} ${contrastDark >= 2 ? '✅' : '❌'} (>= 2 Required)
                 **Light Theme:** ${contrastLight.toFixed(2)} ${contrastLight >= 1.25 ? '✅' : '❌'} (>= 1.25 Required)
 
-                You can use [this tool](https://webaim.org/resources/contrastchecker/?fcolor=${contrastDark < 1.5 ? '313338' : 'ffffff'}&bcolor=${hex.slice(1)}) to check the contrast.
+                You can use [this tool](https://webaim.org/resources/contrastchecker/?fcolor=${contrastDark < 2 ? '313338' : 'ffffff'}&bcolor=${hex.slice(1)}) to check the contrast.
 
                 If you really want to use this colour, please contact an executive.
-            `.replace(/^\s+/gm, '').trim(),
+            `.replace(/^[ \t\r\f\v]+/gm, '').trim(),
             ephemeral: true
         });
         return;
@@ -1088,14 +1089,11 @@ async function setupColourRolesMessage(message: Message) {
             # Name Colours
             
             You can customize your name colour by using the following commands:
-
             ## \`/name_colour set [hex]\`
-            
             to set your name colour to a custom hex colour code.
             ## \`/name_colour remove\`
-            
             to revert your name colour to the default.
-        `.replace(/^\s+/gm, '').trim());
+        `.replace(/^[ \t\r\f\v]+/gm, '').trim());
 
     return await (message.channel as TextChannel).send({
         embeds: [embed],
@@ -1159,6 +1157,169 @@ const reactTickToMessage = async (interaction: ButtonInteraction) => {
     });
 }
 
+// New non-UW student verification by inviter
+client.on('messageCreate', async (message) => {
+    if (message.channelId !== env.VERIFY_CHANNEL_ID) {
+        return;
+    }
+    if (message.author.bot) {
+        return;
+    }
+    if (message.member!.roles.cache.has(env.ROLE_ID.VERIFIED)) {
+        return;
+    }
+    const mentions = message.mentions.members;
+    if (!mentions || mentions.size > 2) {
+        return;
+    }
+    const inviters = mentions.filter(member => {
+        if (member.roles.cache.has(env.ROLE_ID.CURRENT_UW_STUDENT)) return true;
+        for (const skipRole of env.SKIP_ROLE_IDS) {
+            if (member.roles.cache.has(skipRole)) return true;
+        }
+        return false;
+    });
+    if (!inviters.size) {
+        return;
+    }
+
+    message.reply({
+        content: `
+            Hi! Welcome to osu UWaterloo!
+
+            ${inviters.map(inviter => `<@${inviter.id}>`).join(' ')}, can you confirm that you know this person?
+
+            If you do, please click the button below, and they will be automatically verified. If you don't know them, please click the other button.
+
+            -# The buttons are only for ${inviters.map(inviter => `<@${inviter.id}>`).join(', ')} and <@&${env.EXEC_ROLE_ID}>.
+        `.replace(/^[ \t\r\f\v]+/gm, '').trim(),
+        components: [
+            new ActionRowBuilder<ButtonBuilder>().addComponents(
+                new ButtonBuilder()
+                    .setLabel('Yes, I know them')
+                    .setStyle(ButtonStyle.Success)
+                    .setCustomId(`verify_invention_request_from_${message.author.id}_yes_${inviters.map(inviter => inviter.id).join('_')}`),
+                new ButtonBuilder()
+                    .setLabel('No, I don\'t know them')
+                    .setStyle(ButtonStyle.Danger)
+                    .setCustomId(`verify_invention_request_from_${message.author.id}_no_${inviters.map(inviter => inviter.id).join('_')}`),
+            )
+        ]
+    });
+
+    // Log the message
+    logger.info(message.member!, 'Verification request', 'Sent a verification request to the mentioned members.', embed => {
+        embed.setDescription(message.content);
+    });
+});
+
+async function onVerifyInventionRequest(interaction: ButtonInteraction) {
+    const {inviteeId, yesNo, inviterIdsStr} = interaction.customId.match(/^verify_invention_request_from_(?<inviteeId>\d+)_(?<yesNo>yes|no)_(?<inviterIdsStr>.+)$/)?.groups ?? {};
+    if (!inviteeId || !yesNo ) {
+        await interaction.reply({
+            content: 'Invalid button ID.',
+            ephemeral: true
+        });
+        return;
+    }
+    const isYes = (yesNo === 'yes');
+    const inviterIds = inviterIdsStr.split('_');
+    
+    const botMessage = interaction.message as Message;
+    
+    const isMod = (interaction.member!.permissions as Readonly<PermissionsBitField>).has(PermissionFlagsBits.ManageRoles);
+    const isInviter = inviterIds.includes(interaction.user.id);
+
+    if (!isMod && !isInviter) {
+        await interaction.reply({
+            content: 'This button is not for you. 🥺',
+            ephemeral: true
+        });
+        return;
+    }
+
+    const invitee = await interaction.guild!.members.fetch(inviteeId);
+    if (!invitee) {
+        await interaction.reply({
+            content: 'User not found. They may have left the server.',
+            ephemeral: true
+        });
+        await botMessage.edit({ components: [] });
+        return;
+    }
+    if (invitee.roles.cache.has(env.ROLE_ID.VERIFIED)) {
+        await interaction.reply({
+            content: 'The user is already verified.',
+            ephemeral: true
+        });
+        await botMessage.edit({ components: [] });
+        return;
+    }
+    
+    const isPreviouslyEdited = !!botMessage.editedAt;
+
+    if (isMod) {
+        if (isYes) {
+            logger.success(invitee, 'Invitation verification request accepted by a mod', `A moderator has verified this user\'s invitation verification request. They have been given the verified role. [Message Link](${botMessage.url})`, embed => {
+                embed.addFields({ name: 'Accepted by', value: `<@${interaction.user.id}>` });
+            });
+            Promise.all([
+                invitee.roles.add(env.ROLE_ID.VERIFIED),
+                botMessage.edit({
+                    content: botMessage.content + (isPreviouslyEdited ? '\n' : '\n\n') + '> ✅ A moderator has verified this user.'
+                }),
+                botMessage.edit({ components: [] })
+            ]);
+        } else {
+            logger.error(invitee, 'Invitation verification request denied by a mod', `A moderator has denied this user\'s invitation verification request. [Message Link](${botMessage.url})`, embed => {
+                embed.addFields({ name: 'Denied by', value: `<@${interaction.user.id}>` });
+            });
+            Promise.all([
+                botMessage.edit({
+                    content: botMessage.content + (isPreviouslyEdited ? '\n' : '\n\n') + '> ❌ A moderator has denied this verification request.',
+                    components: []
+                }),
+                botMessage.edit({ components: [] })
+            ]);
+        }
+    } else {
+        if (isYes) {
+            logger.success(invitee, 'Invitation verification request accepted by a member', `The inviter has confirmed that they know this user. They have been given the verified role. [Message Link](${botMessage.url})`, embed => {
+                embed.addFields({ name: 'Confirmed by', value: `<@${interaction.user.id}>` });
+            });
+            Promise.all([
+                invitee.roles.add(env.ROLE_ID.VERIFIED),
+                botMessage.edit({
+                    content: botMessage.content + (isPreviouslyEdited ? '\n' : '\n\n') + `> ✅ <@${interaction.user.id}> has confirmed that they know this user. The user has been given the verified role.`
+                }),
+                botMessage.edit({ components: [] })
+            ]);
+        } else {
+            await botMessage.edit({
+                content: botMessage.content + (isPreviouslyEdited ? '\n' : '\n\n') + `> ❌ <@${interaction.user.id}> has confirmed that they do not know this user.`,
+                components: []
+            });
+            const newInviterIds = inviterIds.filter(id => id !== interaction.user.id);
+            if (newInviterIds.length === 0) {
+                await botMessage.edit({ components: [] });
+            } else {
+                await botMessage.edit({ components: [
+                    new ActionRowBuilder<ButtonBuilder>().addComponents(
+                        new ButtonBuilder()
+                            .setLabel('Yes, I know them')
+                            .setStyle(ButtonStyle.Success)
+                            .setCustomId(`verify_invention_request_from_${inviteeId}_yes_${newInviterIds.join('_')}`),
+                        new ButtonBuilder()
+                            .setLabel('No, I don\'t know them')
+                            .setStyle(ButtonStyle.Danger)
+                            .setCustomId(`verify_invention_request_from_${inviteeId}_no_${newInviterIds.join('_')}`),
+                    )
+                ] });
+                await interaction.deferUpdate();
+            }
+        }
+    }
+}
 
 // Slash commands and context menu
 // Register slash command and context menu
@@ -1298,6 +1459,8 @@ client.on('interactionCreate', async (interaction: Interaction) => {
         await onVerifyRequest(interaction as ButtonInteraction);
     } else if (action.startsWith('react_tick_to_message_')) {
         await reactTickToMessage(interaction as ButtonInteraction);
+    } else if (action.startsWith('verify_invention_request_from_')) {
+        await onVerifyInventionRequest(interaction as ButtonInteraction);
     }
 });
 
