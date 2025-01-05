@@ -18,7 +18,7 @@ import {
     PermissionsBitField
 } from 'discord.js';
 import express from 'express';
-import env from './env.js';
+import env from './env';
 import { encryptUserId, decryptUserId, generateRandomToken } from './encryption';
 import getTemplate from './template';
 import { sendEmail } from './email';
