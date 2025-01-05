@@ -1089,7 +1089,7 @@ async function setupColourRolesMessage(message: Message) {
         .setDescription(`
             # Name Colours
             
-            You can customize your name colour by using the following commands:
+            You can customize your name colour by using the following commands in any channel:
             ## \`/name_colour set [hex]\`
             to set your name colour to a custom hex colour code.
             ## \`/name_colour remove\`
