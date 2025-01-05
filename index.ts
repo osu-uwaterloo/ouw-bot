@@ -1444,7 +1444,8 @@ client.on('interactionCreate', async (interaction) => {
 // Command to setup the special messages with admin permissions
 client.on('messageCreate', async (message) => {
     if (message.guildId !== env.SERVER_ID) return;
-    if (!message.member!.permissions.has(PermissionFlagsBits.Administrator)) {
+    if (!message.member) return;
+    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
         return;
     }
     if (message.content === '!setupverify') {
