@@ -73,7 +73,7 @@ const checkExpired = () => {
 }
 
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Define static routes, ./static/* will be served as /static/*
 app.use('/static', express.static('static'));
