@@ -21,8 +21,7 @@
   },
   "type": "module",
   "scripts": {
-    "start": "tsx index.ts",
-    "typecheck": "tsc",
-    "heroku-postbuild": "alias tsx='npx tsx'"
+    "start": "npx tsx index.ts",
+    "typecheck": "tsc"
   }
 }
