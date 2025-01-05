@@ -22,6 +22,7 @@
   "type": "module",
   "scripts": {
     "start": "tsx index.js",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "heroku-postbuild": "npm i"
   }
 }
