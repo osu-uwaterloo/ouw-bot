@@ -12,7 +12,9 @@ import {
     ContextMenuCommandBuilder,
     ApplicationCommandType,
     ContextMenuCommandType,
-    InteractionContextType
+    InteractionContextType,
+    UserContextMenuCommandInteraction,
+    MessageContextMenuCommandInteraction
 } from 'discord.js';
 import express from 'express';
 import env from './env.js';
@@ -24,7 +26,11 @@ import { GoogleSpreadsheetRow } from 'google-spreadsheet';
 import Logger from './logging';
 import * as utils from './utils';
 
-type BotInteraction = ButtonInteraction | ChatInputCommandInteraction;
+type BotInteraction =
+    ButtonInteraction |
+    ChatInputCommandInteraction |
+    MessageContextMenuCommandInteraction |
+    UserContextMenuCommandInteraction;
 
 const app: express.Application = express();
 app.use(express.json());
@@ -109,7 +115,6 @@ app.get('/verify/:encryptedUserId', async (req: express.Request, res: express.Re
 });
 
 app.post('/send-verification-email', async (req: express.Request, res: express.Response): Promise<any> => {
-    console.log(req.body);
     const { discordId, watiam } = req.body;
     if (!discordId || !watiam) {
         return res.send({ status: 'error', message: 'Invalid request. Missing parameters.' });
@@ -878,10 +883,6 @@ async function onSlashCommandSetNameColour(interaction: ChatInputCommandInteract
     // If the user is not verified, reject
     const member = interaction.member as GuildMember;
     const roles = member.roles.cache.sort((a, b) => b.position - a.position);
-    console.log('user roles:');
-    for (const role of roles.values()) {
-        console.log(role.name, role.color);
-    }
     const isVerified = roles.has(env.ROLE_ID.VERIFIED);
     if (!isVerified) {
         await interaction.reply({
@@ -926,8 +927,6 @@ async function onSlashCommandSetNameColour(interaction: ChatInputCommandInteract
             break;
         }
     }
-
-    console.log(topColourRole?.name, topColourRole?.position, startPosition, endPosition);
 
     // If top colour role is higher than the server colour roles, reject
     if (topColourRole && topColourRole.position > startPosition) {
@@ -1075,57 +1074,134 @@ async function setupColourRolesMessage(message: Message) {
     });
 }
 
+// Manual verification shortcut
+async function manualAddVerifiedRoles(
+    interaction: BotInteraction,
+    roleIds: string[],
+    member: GuildMember,
+    invoker: GuildMember,
+    originalMessage: Message | null = null
+) {
+    roleIds = roleIds.filter(roleId => !member.roles.cache.has(roleId));
+    if (roleIds.length === 0) {
+        await interaction.reply({
+            content: 'The user already has the role(s) you are trying to give.',
+            ephemeral: true
+        });
+        return;
+    }
+    for (const roleId of roleIds) {
+        await member.roles.add(roleId);
+    }
+    logger.success(member, 'Role given', `Role <@&${roleIds.join('>, <@&')}> has been given to <@${member.id}>`, embed => {
+        embed.addFields({ name: 'Given by', value: `<@${invoker.id}>` });
+    });
+    if (originalMessage) {
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+                .setLabel('React ✅ to original message')
+                .setStyle(ButtonStyle.Primary)
+                .setCustomId(`react_tick_to_message_${originalMessage.id}`)
+        );
+        await interaction.reply({
+            content: `Role <@&${roleIds.join('>, <@&')}> has been given to <@${member.id}>.`,
+            ephemeral: true,
+            components: [row]
+        });
+    } else {
+        await interaction.reply({
+            content: `Role <@&${roleIds.join('>, <@&')}> has been given to <@${member.id}>.`,
+            ephemeral: true
+        });
+    }
+}
+const reactTickToMessage = async (interaction: ButtonInteraction) => {
+    const originalMessageId = interaction.customId.split('_').pop();
+    if (!originalMessageId) {
+        await interaction.reply({
+            content: 'Invalid button ID.',
+            ephemeral: true
+        });
+        return;
+    }
+    const originalMessage = await interaction.channel!.messages.fetch(originalMessageId);
+    await originalMessage.react('✅');
+    await interaction.update({
+        components: []
+    });
+}
+
 
 // Slash commands and context menu
 // Register slash command and context menu
 client.once('ready', async () => {
     const guild = await client.guilds.fetch(env.SERVER_ID);
-    await guild.commands.create({
-        name: 'manage_membership',
-        description: 'Manage my membership (osu! account connection, listing on website, etc.)'
-    });
-    await guild.commands.create({
-        name: 'name_colour',
-        description: 'Manage your name colour',
-        options: [
-            {
-                name: 'set',
-                description: 'Set your name colour as a custom hex colour code',
-                type: ApplicationCommandOptionType.Subcommand,
-                options: [
-                    {
-                        name: 'hex',
-                        description: 'The hex colour code',
-                        type: ApplicationCommandOptionType.String,
-                        required: true,
-                        max_length: 7,
-                        min_length: 3
-                    }
-                ]
-            },
-            {
-                name: 'remove',
-                description: 'Remove your custom name colour, reverting to the default',
-                type: ApplicationCommandOptionType.Subcommand
-            }
-        ]
-    });
-    await guild.commands.create(
-        new ContextMenuCommandBuilder()
-            .setName('give_verified_role')
-            .setNameLocalization('en-US', 'Give Verified Role')
-            .setType(ApplicationCommandType.User as ContextMenuCommandType)
-            .setContexts(InteractionContextType.Guild)
-            .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
-    );
-    await guild.commands.create(
-        new ContextMenuCommandBuilder()
-            .setName('give_verified_uw_student_role')
-            .setNameLocalization('en-US', 'Give Verified & UW Student Role')
-            .setType(ApplicationCommandType.User as ContextMenuCommandType)
-            .setContexts(InteractionContextType.Guild)
-            .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
-    );
+    await Promise.all([
+        guild.commands.create({
+            name: 'manage_membership',
+            description: 'Manage my membership (osu! account connection, listing on website, etc.)'
+        }),
+        guild.commands.create({
+            name: 'name_colour',
+            description: 'Manage your name colour',
+            options: [
+                {
+                    name: 'set',
+                    description: 'Set your name colour as a custom hex colour code',
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'hex',
+                            description: 'The hex colour code',
+                            type: ApplicationCommandOptionType.String,
+                            required: true,
+                            max_length: 7,
+                            min_length: 3
+                        }
+                    ]
+                },
+                {
+                    name: 'remove',
+                    description: 'Remove your custom name colour, reverting to the default',
+                    type: ApplicationCommandOptionType.Subcommand
+                }
+            ]
+        }),
+        // For user context menu
+        guild.commands.create(
+            new ContextMenuCommandBuilder()
+                .setName('give_verified_role')
+                .setNameLocalization('en-US', 'Give Verified Role')
+                .setType(ApplicationCommandType.User as ContextMenuCommandType)
+                .setContexts(InteractionContextType.Guild)
+                .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+        ),
+        guild.commands.create(
+            new ContextMenuCommandBuilder()
+                .setName('give_verified_uw_student_role')
+                .setNameLocalization('en-US', 'Give Verified & UW Student Role')
+                .setType(ApplicationCommandType.User as ContextMenuCommandType)
+                .setContexts(InteractionContextType.Guild)
+                .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+        ),
+        // For message context menu
+        guild.commands.create(
+            new ContextMenuCommandBuilder()
+                .setName('give_verified_role')
+                .setNameLocalization('en-US', 'Give Verified Role')
+                .setType(ApplicationCommandType.Message as ContextMenuCommandType)
+                .setContexts(InteractionContextType.Guild)
+                .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+        ),
+        guild.commands.create(
+            new ContextMenuCommandBuilder()
+                .setName('give_verified_uw_student_role')
+                .setNameLocalization('en-US', 'Give Verified & UW Student Role')
+                .setType(ApplicationCommandType.Message as ContextMenuCommandType)
+                .setContexts(InteractionContextType.Guild)
+                .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+        ),
+    ]);
 });
             
         
@@ -1149,33 +1225,23 @@ client.on('interactionCreate', async (interaction) => {
 
 // Handle context menu
 client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isUserContextMenuCommand()) return;
+    if (!interaction.isContextMenuCommand()) return;
+    const isUserContextMenuCommand = interaction.isUserContextMenuCommand();
+    const isMessageContextMenuCommand = interaction.isMessageContextMenuCommand();
 
     const { commandName } = interaction;
+    const targetMassage = isMessageContextMenuCommand ? interaction.targetMessage : null;
+    const targetMember = isUserContextMenuCommand ?
+                        (interaction as UserContextMenuCommandInteraction).targetMember:
+                        targetMassage?.member as GuildMember;
     const member = interaction.member as GuildMember;
-    const targetMember = interaction.targetMember as GuildMember;
 
     if (commandName === 'give_verified_role' || commandName === 'give_verified_uw_student_role') {
-        if (!member.permissions.has(PermissionFlagsBits.ManageRoles)) {
-            await interaction.reply({
-                content: 'You do not have permission to use this command.',
-                ephemeral: true
-            });
-            return;
-        }
-        let rolesAdded = `<@&${env.ROLE_ID.VERIFIED}>`;
-        await targetMember.roles.add(env.ROLE_ID.VERIFIED);
+        const roleIds = [env.ROLE_ID.VERIFIED];
         if (commandName === 'give_verified_uw_student_role') {
-            await targetMember.roles.add(env.ROLE_ID.CURRENT_UW_STUDENT);
-            rolesAdded += ` and <@&${env.ROLE_ID.CURRENT_UW_STUDENT}>`;
+            roleIds.push(env.ROLE_ID.CURRENT_UW_STUDENT);
         }
-        await interaction.reply({
-            content: `Role ${rolesAdded} has been given to <@${targetMember.id}>.`,
-            ephemeral: true
-        });
-
-        // Logging
-        logger.info(targetMember, 'Role given', `Role ${rolesAdded} has been given to <@${targetMember.id}>, by <@${member.id}>.`);
+        await manualAddVerifiedRoles(interaction as BotInteraction, roleIds, targetMember as GuildMember, member, targetMassage);
     }
 });
 
@@ -1199,11 +1265,11 @@ client.on('interactionCreate', async (interaction: Interaction) => {
     if (!interaction.isButton()) return;
 
     const action = interaction.customId;
-    
-    switch (action) {
-        case 'verify_request':
-            await onVerifyRequest(interaction);
-            break;
+
+    if (action === 'verify_request') {
+        await onVerifyRequest(interaction as ButtonInteraction);
+    } else if (action.startsWith('react_tick_to_message_')) {
+        await reactTickToMessage(interaction as ButtonInteraction);
     }
 });
 
