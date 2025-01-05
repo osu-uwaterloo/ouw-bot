@@ -1443,7 +1443,7 @@ client.on('interactionCreate', async (interaction) => {
 
 // Command to setup the special messages with admin permissions
 client.on('messageCreate', async (message) => {
-    if (message.channelId !== env.VERIFY_CHANNEL_ID) {
+    if (message.guildId !== env.SERVER_ID) return;
     if (!message.member!.permissions.has(PermissionFlagsBits.Administrator)) {
         return;
     }
