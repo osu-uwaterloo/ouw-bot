@@ -277,6 +277,7 @@ async function restoreVerificationStatus(member: GuildMember) {
 
 // Listen for new members
 client.on('guildMemberAdd', async (member) => {
+    if (member.guild.id !== env.SERVER_ID) return;
     if (await restoreVerificationStatus(member)) {
         await sendExclusiveMessage('Welcome back to osu!uwaterloo! Your have been verified.', member);
         logger.success(member, 'Has been verified', 'The user has been verified as a current UW student before. They rejoined the server and have been given the verified role automatically.');
@@ -1208,8 +1209,11 @@ client.on('messageCreate', async (message) => {
     });
 
     // Log the message
-    logger.info(message.member!, 'Verification request', 'Sent a verification request to the mentioned members.', embed => {
-        embed.setDescription(message.content);
+    logger.info(message.member!, 'Created a invitation verification request', `The user sent a verification request to the mentioned members. [Message Link](${message.url})`, embed => {
+        embed.addFields(
+            { name: 'Inviters given by the user', value: inviters.map(inviter => `<@${inviter.id}>`).join(', ') },
+            { name: 'Message', value: message.content }
+        );
     });
 });
 
@@ -1396,6 +1400,7 @@ client.once('ready', async () => {
         
 // Handle slash commands
 client.on('interactionCreate', async (interaction) => {
+    if (interaction.guildId !== env.SERVER_ID) return;
     if (!interaction.isCommand()) return;
 
     const { commandName } = interaction;
@@ -1414,6 +1419,7 @@ client.on('interactionCreate', async (interaction) => {
 
 // Handle context menu
 client.on('interactionCreate', async (interaction) => {
+    if (interaction.guildId !== env.SERVER_ID) return;
     if (!interaction.isContextMenuCommand()) return;
     const isUserContextMenuCommand = interaction.isUserContextMenuCommand();
     const isMessageContextMenuCommand = interaction.isMessageContextMenuCommand();
@@ -1437,6 +1443,7 @@ client.on('interactionCreate', async (interaction) => {
 
 // Command to setup the special messages with admin permissions
 client.on('messageCreate', async (message) => {
+    if (message.channelId !== env.VERIFY_CHANNEL_ID) {
     if (!message.member!.permissions.has(PermissionFlagsBits.Administrator)) {
         return;
     }
@@ -1451,6 +1458,7 @@ client.on('messageCreate', async (message) => {
 
 // Handle button interactions
 client.on('interactionCreate', async (interaction: Interaction) => {
+    if (interaction.guildId !== env.SERVER_ID) return;
     if (!interaction.isButton()) return;
 
     const action = interaction.customId;
@@ -1461,6 +1469,13 @@ client.on('interactionCreate', async (interaction: Interaction) => {
         await reactTickToMessage(interaction as ButtonInteraction);
     } else if (action.startsWith('verify_invention_request_from_')) {
         await onVerifyInventionRequest(interaction as ButtonInteraction);
+    }
+});
+
+// Leave other guilds
+client.on('guildCreate', async (guild) => {
+    if (guild.id !== env.SERVER_ID) {
+        await guild.leave();
     }
 });
 
