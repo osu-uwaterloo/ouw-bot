@@ -220,6 +220,9 @@ app.get('/email-verify/:encryptedUserId/:token', async (req: express.Request, re
         return res.send(getTemplate('error', { message: 'Cannot find the user in the server. Please join the server first.' }));
     }
 
+    // Remove the user from the verification pool
+    verificationPool.delete(userId);
+
     // Give the verified role to the user
     await member.roles.add(env.ROLE_ID.VERIFIED);
     await member.roles.add(env.ROLE_ID.CURRENT_UW_STUDENT);
@@ -234,9 +237,6 @@ app.get('/email-verify/:encryptedUserId/:token', async (req: express.Request, re
     } catch (error) {
         console.error('Error adding member to the sheet:', error);
     }
-    
-    // Remove the user from the verification pool
-    verificationPool.delete(userId);
 
     // Logging
     logger.success(member, 'Has been verified', 'They have completed the email verification process and have been verified as a current UW student.', embed => {
