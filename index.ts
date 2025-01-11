@@ -1475,6 +1475,17 @@ client.on('messageCreate', async (message) => {
         await setupColourRolesMessage(message);
         await message.delete();
     }
+
+    // Easter egg: react cat to meowssages
+    if (message.content && !message.author.bot) {
+        const meows = message.content.split(/\W+/).filter(word => word.match(/^(m+[er]*o+w+[meow]*|mew[mew*]|n+([ya]{4,}|y+)a+|pu+rr+|mrr+p)+/i));
+        if (meows.length > 0) {
+            await message.react('🐱');
+        }
+        if (meows.length > 3 || meows.reduce((acc, val) => acc + val.length, 0) > 12) {
+            await message.reply('meow mew mew mew nya nayayyaayya mrewo nya purrrrrrrrrr mrew :3');
+        }
+    }
 });
 
 // Handle button interactions
