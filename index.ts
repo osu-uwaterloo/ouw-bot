@@ -1506,11 +1506,13 @@ client.on('messageCreate', async (message) => {
     if (!message.member) return;
     if (message.content && !message.author.bot) {
         const meows = message.content.split(/\W+/).filter(word => word.match(/^(m+[er]*o+w+[meow]*|mew[mew*]|n+([ya]{4,}|y+)a+|pu+rr+|mrr+p)+/i));
-        if (meows.length > 0) {
-            await message.react('🐱');
-        }
-        if (meows.length > 3 || meows.reduce((acc, val) => acc + val.length, 0) > 12) {
-            await message.reply('meow mew mew mew nya nayayyaayya mrewo nya purrrrrrrrrr mrew :3');
+        if (meows.length / message.content.split(/\W+/).length >= 0.2) {
+            if (meows.length > 0) {
+                await message.react('🐱');
+            }
+            if (meows.length > 3 || meows.reduce((acc, val) => acc + val.length, 0) > 12) {
+                await message.reply('meow mew mew mew nya nayayyaayya mrewo nya purrrrrrrrrr mrew :3');
+            }
         }
     }
 });
