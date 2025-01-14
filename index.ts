@@ -1521,7 +1521,7 @@ client.on('messageCreate', async (message) => {
             message.react('🚫');
             const time = Math.floor(Math.random() * 11) + 5;
             try {
-                await message?.member?.timeout(time, "Posting nailong");
+                await message?.member?.timeout(time * 1000, "Posting nailong");
             } catch (e) {}
         }
     }
