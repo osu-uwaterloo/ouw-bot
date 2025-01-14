@@ -1506,7 +1506,6 @@ client.on('messageCreate', async (message) => {
     if (!message.member) return;
     if (message.content && !message.author.bot) {
         const meows = message.content.split(/\W+/).filter(word => word.match(/^(m+[er]*o+w+[meow]*|mew[mew*]|n+([ya]{4,}|y+)a+|pu+rr+|mrr+p)+/i));
-        console.log(meows.length / message.content.split(/\W+/).length);
         if (meows.length > message.content.split(/\W+/).length * 0.2) {
             if (meows.length > 0) {
                 await message.react('🐱');
@@ -1514,6 +1513,16 @@ client.on('messageCreate', async (message) => {
             if (meows.length > 3 || meows.reduce((acc, val) => acc + val.length, 0) > 12) {
                 await message.reply('meow mew mew mew nya nayayyaayya mrewo nya purrrrrrrrrr mrew :3');
             }
+        }
+    }
+
+    if (message.content && !message.author.bot) {
+        if (message.content.toLowerCase().match(/https:\/\/tenor\.com\/view\/(.*?)nailong/g)) {
+            message.react('🚫');
+            const time = Math.floor(Math.random() * 11) + 5;
+            try {
+                await message?.member?.timeout(time, "Posting nailong");
+            } catch (e) {}
         }
     }
 });
