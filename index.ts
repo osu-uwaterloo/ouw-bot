@@ -1519,7 +1519,7 @@ client.on('messageCreate', async (message) => {
     if (message.content && !message.author.bot) {
         if (message.content.toLowerCase().match(/https:\/\/tenor\.com\/view\/(.*?)nailong/g)) {
             message.react('🚫');
-            const time = Math.floor(Math.random() * 11) + 5;
+            const time = Math.floor(Math.random() * 101) + 20;
             try {
                 await message?.member?.timeout(time * 1000, "Posting nailong");
             } catch (e) {}
