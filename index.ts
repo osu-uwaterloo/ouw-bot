@@ -1533,7 +1533,7 @@ client.on('messageCreate', async (message) => {
             const time = noDuplicateRandom(15, 130);
             const emojis = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣'];
             try {
-                //await message?.member?.timeout(time * 1000, "Posting nailong");
+                await message?.member?.timeout(time * 1000, "Posting nailong");
                 for (const digit of time.toString()) {
                     await message.react(emojis[parseInt(digit)]);
                 }
