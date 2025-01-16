@@ -1519,9 +1519,25 @@ client.on('messageCreate', async (message) => {
     if (message.content && !message.author.bot) {
         if (message.content.toLowerCase().match(/https:\/\/tenor\.com\/view\/(.*?)nailong/g)) {
             message.react('🚫');
-            const time = Math.floor(Math.random() * 101) + 20;
+            const hasDuplicatedChar = (str: string) => str.length !== new Set(str).size;
+            const noDuplicateRandom = (min: number, max: number) => {
+                let random;
+                while (true) {
+                    random = Math.floor(Math.random() * (max - min + 1)) + min;
+                    if (!hasDuplicatedChar(random.toString())) {
+                        break;
+                    }
+                }
+                return random;
+            }
+            const time = noDuplicateRandom(15, 130);
+            const emojis = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣'];
             try {
-                await message?.member?.timeout(time * 1000, "Posting nailong");
+                //await message?.member?.timeout(time * 1000, "Posting nailong");
+                for (const digit of time.toString()) {
+                    await message.react(emojis[parseInt(digit)]);
+                }
+                await message.react('🇸');
             } catch (e) {}
         }
     }
