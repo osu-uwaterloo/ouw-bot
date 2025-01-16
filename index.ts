@@ -1506,7 +1506,7 @@ client.on('messageCreate', async (message) => {
     if (!message.member) return;
     if (message.content && !message.author.bot) {
         const meows = message.content.split(/\W+/).filter(word => word.match(/^(m+[er]*o+w+[meow]*|mew[mew*]|n+([ya]{4,}|y+)a+|pu+rr+|mrr+p)+/i));
-        if (meows.length > message.content.split(/\W+/).length * 0.2) {
+        if (meows.length > message.content.split(/\W+/).length * 0.2 || meows.reduce((acc, val) => acc + val.length, 0) > message.content.length * 0.25) {
             if (meows.length > 0) {
                 await message.react('🐱');
             }
