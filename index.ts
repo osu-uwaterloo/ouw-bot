@@ -18,6 +18,7 @@ import {
     PermissionsBitField
 } from 'discord.js';
 import express from 'express';
+import schedule from 'node-schedule';
 import env from './env';
 import { encryptUserId, decryptUserId, generateRandomToken } from './encryption';
 import getTemplate from './template';
@@ -26,6 +27,7 @@ import * as sheet from './spreadsheet';
 import { GoogleSpreadsheetRow } from 'google-spreadsheet';
 import Logger from './logging';
 import * as utils from './utils';
+import { DateTime } from 'luxon';
 
 type BotInteraction =
     ButtonInteraction |
@@ -1497,6 +1499,40 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 client.on('guildCreate', async (guild) => {
     if (guild.id !== env.SERVER_ID) {
         await guild.leave();
+    }
+});
+
+// Send "Time" when its 7:27 PM in toronto time in the time channel
+if (env.TIME_727_SPAM_CHANNEL_ID) {
+    const rule = new schedule.RecurrenceRule();
+    rule.hour = 19;
+    rule.minute = 27;
+    rule.tz = 'America/Toronto';
+
+    schedule.scheduleJob(rule, async () => {
+        const channel = await client.channels.fetch(env.TIME_727_SPAM_CHANNEL_ID) as TextChannel;
+        if (!channel) return;
+        await channel.send('time');
+    });
+}
+
+// Easter egg: react "+- minutes" (e.g +3) to time messages within 7:27 PM +- 10 minutes
+client.on('messageCreate', async (message) => {
+    if (message.guildId !== env.SERVER_ID) return;
+    if (!message.member) return;
+    if (message.author.bot) return;
+    if (!message.content) return;
+    if (message.content.replace(/\W/g, '').match(/^time[timeow]*$/i)) {
+        const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
+        const [h, m] = [messageTime.hour, messageTime.minute];
+        if (h !== 19) return;
+        if (m === 27) return;
+        if (m < 27 - 10 || m > 27 + 10) return;
+        const sign = Math.sign(m - 27) === 1 ? '➕' : '➖';
+        const diff = Math.abs(m - 27);
+        await message.react(sign);
+        const emojis = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+        await message.react(emojis[diff]);
     }
 });
 
