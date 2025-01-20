@@ -2,6 +2,7 @@ import env from './env.js';
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import { GoogleSpreadsheetRow } from 'google-spreadsheet';
+import { DateTime } from 'luxon';
 
 
 const SCOPES = [
@@ -98,7 +99,7 @@ const addMember = async (
 ) => {
     const date = new Date();
     const isoTime = date.toISOString();
-    const localTime = `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()} ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+    const localTime = DateTime.fromJSDate(date).setZone('America/Toronto').toFormat('M/d/yyyy HH:mm:ss');
     return await addRow({
         timestamp: isoTime,
         local_time: localTime,
