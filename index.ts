@@ -1534,6 +1534,24 @@ client.on('messageCreate', async (message) => {
         const emojis = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
         await message.react(emojis[diff]);
     }
+    
+});
+client.on('messageCreate', async (message) => {
+    if (message.guildId !== env.SERVER_ID) return;
+    if (!message.member) return;
+    if (message.author.bot) return;
+    if (!message.content) return;
+    if (message.content.replace(/\W/g, '').match(/^time[time]*$/i)) {
+        const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
+        const [h, m] = [messageTime.hour, messageTime.minute];
+        if (h === 19 && m >= 27 - 10 && m <= 27 + 10) return;
+        try {
+            Promise.all([
+                await message.react('❓'),
+                await message.author.send('It\'s not the time yet!!! skill issue')
+            ]);
+        } catch (e) {}
+    }
 });
 
 // Easter egg: react cat to meowssages
