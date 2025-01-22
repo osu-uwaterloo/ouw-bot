@@ -1541,6 +1541,17 @@ client.on('messageCreate', async (message) => {
     if (!message.member) return;
     if (message.author.bot) return;
     if (!message.content) return;
+    if (message.content.replace(/\W/g, '').match(/time/i)) {
+        const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
+        const [h, m] = [messageTime.hour, messageTime.minute];
+        if (h === 7 && m === 27) {
+            Promise.all([
+                await message.react('‼️'),
+                await message.reply('Rare AM Time!!')
+            ]);
+            return;
+        }
+    }
     if (message.content.replace(/\W/g, '').match(/^time[time]*$/i)) {
         const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
         const [h, m] = [messageTime.hour, messageTime.minute];
