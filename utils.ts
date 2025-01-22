@@ -42,10 +42,10 @@ export const deHomoglyph = (str: string): string => {
 }
 
 // Has obfuscated string
-export const hasObfuscatedStrings = (str: string, keywords: string[] = []): boolean => {
+export const equalToObfuscatedStrings = (str: string, keywords: string[] = []): boolean => {
 	const cured = decancer(str);
 	for (const keyword of keywords) {
-		if (cured.contains(keyword)) {
+		if (cured.equals(keyword)) {
 			return true;
 		}
 	}

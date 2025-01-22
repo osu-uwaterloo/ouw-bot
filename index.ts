@@ -1525,7 +1525,7 @@ client.on('messageCreate', async (message) => {
     if (
         message.content.replace(/\W/g, '').match(/time[time]/i) ||
         utils.deHomoglyph(message.content).replace(/\W/g, '').match(/time[time]/i) ||
-        utils.hasObfuscatedStrings(message.content, ['time'])
+        utils.equalToObfuscatedStrings(message.content, ['time'])
     ) {
         const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
         const [h, m] = [messageTime.hour, messageTime.minute];
@@ -1548,7 +1548,7 @@ client.on('messageCreate', async (message) => {
     if (
         message.content.replace(/\W/g, '').match(/time/i) ||
         utils.deHomoglyph(message.content).replace(/\W/g, '').match(/time/i) ||
-        utils.hasObfuscatedStrings(message.content, ['time'])
+        utils.equalToObfuscatedStrings(message.content, ['time'])
     ) {
         const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
         const [h, m] = [messageTime.hour, messageTime.minute];
@@ -1563,7 +1563,7 @@ client.on('messageCreate', async (message) => {
     if (
         message.content.replace(/\W/g, '').match(/time[time]/i) ||
         utils.deHomoglyph(message.content).replace(/\W/g, '').match(/time[time]/i) ||
-        utils.hasObfuscatedStrings(message.content, ['time'])
+        utils.equalToObfuscatedStrings(message.content, ['time'])
     ) {
         const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
         const [h, m] = [messageTime.hour, messageTime.minute];
