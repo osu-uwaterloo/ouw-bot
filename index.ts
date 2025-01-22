@@ -1522,7 +1522,7 @@ client.on('messageCreate', async (message) => {
     if (!message.member) return;
     if (message.author.bot) return;
     if (!message.content) return;
-    if (message.content.replace(/\W/g, '').match(/^time[timeow]*$/i)) {
+    if (utils.deHomoglyph(message.content).replace(/\W/g, '').match(/^time[timeow]*$/i)) {
         const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
         const [h, m] = [messageTime.hour, messageTime.minute];
         if (h !== 19) return;
@@ -1541,7 +1541,7 @@ client.on('messageCreate', async (message) => {
     if (!message.member) return;
     if (message.author.bot) return;
     if (!message.content) return;
-    if (message.content.replace(/\W/g, '').match(/time/i)) {
+    if (utils.deHomoglyph(message.content).replace(/\W/g, '').match(/time/i)) {
         const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
         const [h, m] = [messageTime.hour, messageTime.minute];
         if (h === 7 && m === 27) {
@@ -1552,7 +1552,7 @@ client.on('messageCreate', async (message) => {
             return;
         }
     }
-    if (message.content.replace(/\W/g, '').match(/^time[time]*$/i)) {
+    if (utils.deHomoglyph(message.content).replace(/\W/g, '').match(/^time[time]*$/i)) {
         const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
         const [h, m] = [messageTime.hour, messageTime.minute];
         if (h === 19 && m >= 27 - 10 && m <= 27 + 10) return;
@@ -1572,7 +1572,7 @@ client.on('messageCreate', async (message) => {
     if (message.guildId !== env.SERVER_ID) return;
     if (!message.member) return;
     if (message.content && !message.author.bot) {
-        const meows = message.content.split(/\W+/).filter(word => word.match(/^(m+[er]*o+w+[meow]*|mew[mew*]|n+([ya]{4,}|y+)a+|pu+rr+|mrr+p)+/i));
+        const meows = utils.deHomoglyph(message.content).split(/\W+/).filter(word => word.match(/^(m+[er]*o+w+[meow]*|mew[mew*]|n+([ya]{4,}|y+)a+|pu+rr+|mrr+p)+/i));
         if (meows.length > message.content.split(/\W+/).length * 0.2 || meows.reduce((acc, val) => acc + val.length, 0) > message.content.length * 0.25) {
             if (meows.length > 0) {
                 await message.react('🐱');

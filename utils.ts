@@ -1,4 +1,6 @@
 import * as wcag from 'wcag-contrast';
+// @ts-ignore
+import { deHomoglyph as deHomoglyphStr } from 'de-homoglyph';
 
 // Parse human boolean to boolean (true, Yes, Y, 1, t...)
 export const parseHumanBool = (str: string | boolean | null | undefined, defaultValue:boolean = false): boolean => {
@@ -31,4 +33,9 @@ export const parseHexColour = (str: string): HexColourString | null => {
 export const calculateColourContrast = (colour1: string, colour2: string): number => {
 	const contrast = wcag.hex(colour1, colour2);
 	return contrast;
+}
+
+// De-homoglyph a string
+export const deHomoglyph = (str: string): string => {
+	return deHomoglyphStr(str);
 }
