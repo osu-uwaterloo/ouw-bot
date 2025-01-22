@@ -6,6 +6,7 @@
     "bs58": "^6.0.0",
     "crypto-js": "^4.2.0",
     "de-homoglyph": "^0.1.1",
+    "decancer": "^3.2.8",
     "discord.js": "^14.16.3",
     "express": "^4.21.2",
     "google-auth-library": "^9.15.0",

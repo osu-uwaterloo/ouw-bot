@@ -1,6 +1,7 @@
 import * as wcag from 'wcag-contrast';
 // @ts-ignore
 import { deHomoglyph as deHomoglyphStr } from 'de-homoglyph';
+import decancer from 'decancer';
 
 // Parse human boolean to boolean (true, Yes, Y, 1, t...)
 export const parseHumanBool = (str: string | boolean | null | undefined, defaultValue:boolean = false): boolean => {
@@ -38,4 +39,15 @@ export const calculateColourContrast = (colour1: string, colour2: string): numbe
 // De-homoglyph a string
 export const deHomoglyph = (str: string): string => {
 	return deHomoglyphStr(str);
+}
+
+// Has obfuscated string
+export const hasObfuscatedStrings = (str: string, keywords: string[] = []): boolean => {
+	const cured = decancer(str);
+	for (const keyword of keywords) {
+		if (cured.contains(keyword)) {
+			return true;
+		}
+	}
+	return false;
 }
