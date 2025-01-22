@@ -1546,8 +1546,8 @@ client.on('messageCreate', async (message) => {
         const [h, m] = [messageTime.hour, messageTime.minute];
         if (h === 7 && m === 27) {
             Promise.all([
-                await message.react('‼️'),
-                await message.reply('Rare AM Time!!')
+                message.react('‼️'),
+                message.reply('Rare AM Time!!')
             ]);
             return;
         }
@@ -1557,11 +1557,13 @@ client.on('messageCreate', async (message) => {
         const [h, m] = [messageTime.hour, messageTime.minute];
         if (h === 19 && m >= 27 - 10 && m <= 27 + 10) return;
         try {
-            Promise.all([
-                await message.react('❓'),
-                await message.author.send('It\'s not the time yet!!! skill issue')
-            ]);
-        } catch (e) {}
+            await message.react('❓'),
+            await message.member.send('It\'s not the time yet!!! skill issue')
+        } catch (e: any) {
+            if (e.code === 90001) {
+                await message.reply('It\'s not the time yet!!! skill issue\nand pls don\'t block me 🥺 🥺');
+            }
+        }
     }
 });
 
