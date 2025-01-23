@@ -1547,7 +1547,7 @@ client.on('messageCreate', async (message) => {
                 if (m > 27) {
                     await message.member.send(`Skill issue, you missed the time by ${diff} minutes. Nice try, appreciate the effort!`);
                 } else {
-                    await message.author.send(`It\'s almost the time but not quite yet! Could you please wait ${diff} minute${diff > 1 ? 's' : ''}patiently? 🥺`);
+                    await message.author.send(`It\'s almost the time but not quite yet! Could you please wait ${diff} minute${diff > 1 ? 's' : ''} patiently? 🥺`);
                 }
             } catch (e) {}
             return;
