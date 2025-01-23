@@ -1523,51 +1523,36 @@ client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     if (!message.content) return;
     if (
-        message.content.replace(/\W/g, '').match(/time[time]/i) ||
-        utils.deHomoglyph(message.content).replace(/\W/g, '').match(/time[time]/i) ||
+        message.content.replace(/\W/g, '').match(/time[time]*/i) ||
+        utils.deHomoglyph(message.content).replace(/\W/g, '').match(/time[time]*/i) ||
         utils.equalToObfuscatedStrings(message.content, ['time'])
     ) {
         const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
         const [h, m] = [messageTime.hour, messageTime.minute];
-        if (h !== 19) return;
-        if (m === 27) return;
-        if (m < 27 - 10 || m > 27 + 10) return;
-        const sign = Math.sign(m - 27) === 1 ? '➕' : '➖';
-        const diff = Math.abs(m - 27);
-        await message.react(sign);
-        const emojis = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
-        await message.react(emojis[diff]);
-    }
-    
-});
-client.on('messageCreate', async (message) => {
-    if (message.guildId !== env.SERVER_ID) return;
-    if (!message.member) return;
-    if (message.author.bot) return;
-    if (!message.content) return;
-    if (
-        message.content.replace(/\W/g, '').match(/time/i) ||
-        utils.deHomoglyph(message.content).replace(/\W/g, '').match(/time/i) ||
-        utils.equalToObfuscatedStrings(message.content, ['time'])
-    ) {
-        const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
-        const [h, m] = [messageTime.hour, messageTime.minute];
-        if (h === 7 && m === 27) {
+        if (h === 19 && m === 27) return; // do nothing at actual time
+        if (h === 7 && m === 27) { // rare AM time
             Promise.all([
                 message.react('‼️'),
                 message.reply('Rare AM Time!!')
             ]);
             return;
         }
-    }
-    if (
-        message.content.replace(/\W/g, '').match(/time[time]/i) ||
-        utils.deHomoglyph(message.content).replace(/\W/g, '').match(/time[time]/i) ||
-        utils.equalToObfuscatedStrings(message.content, ['time'])
-    ) {
-        const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
-        const [h, m] = [messageTime.hour, messageTime.minute];
-        if (h === 19 && m >= 27 - 10 && m <= 27 + 10) return;
+        if (h === 19 && m >= 27 - 10 && m <= 27 + 10) { // time +- 10 minutes
+            const sign = Math.sign(m - 27) === 1 ? '➕' : '➖';
+            const diff = Math.abs(m - 27);
+            await message.react(sign);
+            const emojis = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+            await message.react(emojis[diff]);
+            try {
+                if (m > 27) {
+                    await message.member.send(`Skill issue, you missed the time by ${diff} minutes. Nice try, appreciate the effort!`);
+                } else {
+                    await message.author.send(`It\'s almost the time but not quite yet! Could you please wait ${diff} minute${diff > 1 ? 's' : ''}patiently? 🥺`);
+                }
+            } catch (e) {}
+            return;
+        }
+        // else
         try {
             await message.react('❓'),
             await message.member.send('It\'s not the time yet!!! skill issue')
@@ -1577,6 +1562,7 @@ client.on('messageCreate', async (message) => {
             }
         }
     }
+    
 });
 
 // Easter egg: react cat to meowssages
