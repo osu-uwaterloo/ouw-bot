@@ -1523,8 +1523,8 @@ client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     if (!message.content) return;
     if (
-        message.content.replace(/\W/g, '').match(/^time[time]*/i) ||
-        utils.deHomoglyph(message.content).replace(/\W/g, '').match(/^time[time]*/i) ||
+        message.content.replace(/\W/g, '').match(/^time[time]*$/i) ||
+        utils.deHomoglyph(message.content).replace(/\W/g, '').match(/^time[time]*$/i) ||
         utils.equalToObfuscatedStrings(message.content, ['time'])
     ) {
         const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
