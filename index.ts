@@ -1548,22 +1548,22 @@ client.on('messageCreate', async (message) => {
             const emojis = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
             await message.react(emojis[diff]);
             try {
-                if (m > 27) {
-                    await message.member.send(`Skill issue, you missed the time by ${diff} minutes. Nice try, appreciate the effort!`);
-                } else {
-                    await message.author.send(`It\'s almost the time but not quite yet! Could you please wait ${diff} minute${diff > 1 ? 's' : ''} patiently? 🥺`);
-                }
+                // if (m > 27) {
+                //     await message.member.send(`Skill issue, you missed the time by ${diff} minutes. Nice try, appreciate the effort!`);
+                // } else {
+                //     await message.author.send(`It\'s almost the time but not quite yet! Could you please wait ${diff} minute${diff > 1 ? 's' : ''} patiently? 🥺`);
+                // }
             } catch (e) {}
             return;
         }
         // else
         try {
-            await message.react('❓'),
-            await message.member.send('It\'s not the time yet!!! skill issue')
+            // await message.react('❓'),
+            // await message.member.send('It\'s not the time yet!!! skill issue')
         } catch (e: any) {
-            if (e.code === 90001) {
-                await message.reply('It\'s not the time yet!!! skill issue\nand pls don\'t block me 🥺 🥺');
-            }
+            // if (e.code === 90001) {
+            //     await message.reply('It\'s not the time yet!!! skill issue\nand pls don\'t block me 🥺 🥺');
+            // }
         }
     }
     
@@ -1579,7 +1579,7 @@ client.on('messageCreate', async (message) => {
             if (meows.length > 0) {
                 await message.react('🐱');
             }
-            if (meows.length > 3 || meows.reduce((acc, val) => acc + val.length, 0) > 12) {
+            if (meows.length > 4 || meows.reduce((acc, val) => acc + val.length, 0) > 15) {
                 await message.reply('meow mew mew mew nya nayayyaayya mrewo nya purrrrrrrrrr mrew :3');
             }
         }
