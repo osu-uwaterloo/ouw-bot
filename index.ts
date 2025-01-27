@@ -15,7 +15,9 @@ import {
     InteractionContextType,
     UserContextMenuCommandInteraction,
     MessageContextMenuCommandInteraction,
-    PermissionsBitField
+    PermissionsBitField,
+    ChannelType,
+    Partials
 } from 'discord.js';
 import express from 'express';
 import schedule from 'node-schedule';
@@ -45,7 +47,9 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-    ]
+        GatewayIntentBits.DirectMessages,
+    ],
+    partials: [Partials.Channel],
 });
 
 const logger = new Logger(client);
@@ -1605,6 +1609,87 @@ client.on('messageCreate', async (message) => {
                 await message.react('🇸');
             } catch (e) {}
         }
+    }
+});
+
+// Direct message forwarding
+client.on('messageCreate', async (message) => {
+    if (message.channel.type !== ChannelType.DM) return;
+    if (!(env?.ADMIN_IDS ?? []).includes(message.author.id)) return;
+    const content = (message.content ?? '').trim();
+    if (!content) return;
+    let command: "message" | "react" | null = null;
+    if (content.startsWith("!sendmsg") || content.startsWith("!msg") || content.startsWith("!message") || content.startsWith("!send")) {
+        command = "message";
+    } else if (content.startsWith("!react")) {
+        command = "react";
+    } else {
+        return;
+    }
+    const splited = content.split(' ').slice(1);
+    if (splited.length < 2) return;
+    const target = splited[0];
+    let sendContent = splited.slice(1).join(' ');
+    
+    let targetChannelId: string | null = null, targetMessageId: string | null = null;
+    let targetChannel: TextChannel | null = null, targetMessage: Message | null = null;
+
+    if (target.match(/^\d{15,}$/)) {
+        targetChannelId = target;
+    } else if (target.match(/^https:\/\/discord.com\/channels\/(\d+)\/(\d+)\/(\d+)\/?$/)) {
+        const [_, guildId, channelId, messageId] = target.match(/^https:\/\/discord.com\/channels\/(\d+)\/(\d+)\/(\d+)$/) ?? [];
+        if (guildId !== env.SERVER_ID) return;
+        targetChannelId = channelId;
+        targetMessageId = messageId;
+    } else if (target.match(/^https:\/\/discord.com\/channels\/(\d+)\/(\d+)\/?$/)) {
+        const [_, guildId, channelId] = target.match(/^https:\/\/discord.com\/channels\/(\d+)\/(\d+)$/) ?? [];
+        if (guildId !== env.SERVER_ID) return;
+        targetChannelId = channelId;        
+    }
+    if (!targetChannelId) return;
+    targetChannel = await client.channels.fetch(targetChannelId) as TextChannel;
+    if (!targetChannel) return;
+    if (targetMessageId) {
+        targetMessage = await targetChannel.messages.fetch(targetMessageId);
+        if (!targetMessage) {
+            message.reply('Target message not found.');
+            return;
+        }
+    }
+    if (command === "message") {
+        // parse mentions
+        const guild = targetChannel.guild;
+        if (sendContent.includes('@')) {
+            await guild.members.fetch();
+        }
+        sendContent = sendContent.replace(/@([a-z0-9\._]{2,32})/gi, (match) => {
+            const username = match.slice(1);
+            const member = guild.members.cache.find(member => member.user.username === username);
+            if (member) {
+                return `<@${member.id}>`;
+            }
+            return match;
+        });
+        try {
+            let linkOfSentMessage = '';
+            if (targetMessage) {
+                linkOfSentMessage = (await targetMessage.reply(sendContent)).url;
+            } else {
+                linkOfSentMessage = (await targetChannel.send(sendContent)).url;
+            }
+            if (linkOfSentMessage) {
+                message.reply(`Sent: ${linkOfSentMessage}`);
+            }
+        } catch (e) {}
+    } else if (command === "react") {
+        if (!targetMessage) return;
+        const emojis = sendContent.split(' ');
+        for (const emoji of emojis) {
+            try {
+                await targetMessage.react(emoji);
+            } catch (e) {}
+        }
+        message.reply(`Reacted ${targetMessage.url}`);
     }
 });
 
