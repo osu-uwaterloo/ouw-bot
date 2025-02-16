@@ -17,7 +17,8 @@ import {
     MessageContextMenuCommandInteraction,
     PermissionsBitField,
     ChannelType,
-    Partials
+    Partials,
+    SlashCommandBuilder
 } from 'discord.js';
 import express from 'express';
 import schedule from 'node-schedule';
@@ -30,6 +31,7 @@ import { GoogleSpreadsheetRow } from 'google-spreadsheet';
 import Logger from './logging';
 import * as utils from './utils';
 import { DateTime } from 'luxon';
+import speakeasy from 'speakeasy';
 
 type BotInteraction =
     ButtonInteraction |
@@ -1331,6 +1333,57 @@ async function onVerifyInventionRequest(interaction: ButtonInteraction) {
     }
 }
 
+// Club Twitch account related 
+async function setupTwitch2FAMessage(message: Message) {
+    const embed = new EmbedBuilder()
+        .setColor('#9146ff')
+        .setTitle('Get 2FA code for club Twitch account')
+        .setDescription(`
+            Click the button below to get the 2FA code for the club Twitch account.
+
+            Contact @solstice23 if you have any issues.
+        `.replace(/^[ \t\r\f\v]+/gm, '').trim());
+
+    
+    const button = new ButtonBuilder()
+        .setCustomId('get_twitch_2fa_code')
+        .setLabel('Get 2FA Code')
+        .setStyle(ButtonStyle.Primary);
+
+    const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(button);
+
+    return await (message.channel as TextChannel).send({
+        embeds: [embed],
+        components: [actionRow],
+    });
+}
+
+async function onGetTwitch2FACode(interaction: ButtonInteraction) {
+	const totpUrl = env.TWITCH_2FA_TOTP_URL;
+
+    const secret = totpUrl.startsWith('otpauth://totp/') ? totpUrl.match(/secret=([A-Z2-7]+)/)?.[1] : null;
+    
+	if (!secret) {
+        await interaction.reply({
+            content: 'Error: Bot is not configured properly. The Twitch 2FA secret is missing. Please contact the bot developer.',
+            ephemeral: true
+        });
+        return;
+	}
+
+	const token = speakeasy.totp({
+        secret: secret,
+        encoding: 'base32'
+	});
+
+    await interaction.reply({
+        content: `# Twitch 2FA Code: \`${token}\`\n\n-# This code will expire in 30 seconds. If the code doesn't work, click the button again.`,
+        ephemeral: true
+    });
+}
+
+
+
 // Slash commands and context menu
 // Register slash command and context menu
 client.once('ready', async () => {
@@ -1480,6 +1533,9 @@ client.on('messageCreate', async (message) => {
     } else if (message.content === '!setupcolourroles') {
         await setupColourRolesMessage(message);
         await message.delete();
+    } else if (message.content === '!setuptwitch2fa') {
+        await setupTwitch2FAMessage(message);
+        await message.delete();
     }
 });
 
@@ -1496,6 +1552,8 @@ client.on('interactionCreate', async (interaction: Interaction) => {
         await reactTickToMessage(interaction as ButtonInteraction);
     } else if (action.startsWith('verify_invention_request_from_')) {
         await onVerifyInventionRequest(interaction as ButtonInteraction);
+    } else if (action === 'get_twitch_2fa_code') {
+        await onGetTwitch2FACode(interaction as ButtonInteraction);
     }
 });
 
