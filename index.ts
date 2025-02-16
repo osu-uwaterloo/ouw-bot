@@ -1337,7 +1337,7 @@ async function onVerifyInventionRequest(interaction: ButtonInteraction) {
 async function setupTwitch2FAMessage(message: Message) {
     const embed = new EmbedBuilder()
         .setColor('#9146ff')
-        .setTitle('Get 2FA code for club Twitch account')
+        .setTitle('Get 2FA Code for Club Twitch Account')
         .setDescription(`
             Click the button below to get the 2FA code for the club Twitch account.
 
