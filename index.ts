@@ -1382,7 +1382,40 @@ async function onGetTwitch2FACode(interaction: ButtonInteraction) {
     });
 }
 
+// export reaction members watiams
+async function exportReactionMembers(interaction: BotInteraction, message: Message) {
+    // refresh cache
+    await message.fetch();
+    await Promise.all(message.reactions.cache.map(reaction => reaction.users.fetch()));
 
+    console.log(message.reactions.cache);
+    const reactions: { emoji: string | null; members: string[]; watiams?: string[] }[] = message.reactions.cache.map(reaction => {
+        return {
+            emoji: reaction.emoji.id ? `\`:${reaction.emoji.name}:\`` : reaction.emoji.name,
+            members: reaction.users.cache.map(user => user.id)
+        };
+    });
+    
+    // lookup watiams
+    const rows = await sheet.getAllRows();
+
+    reactions.forEach(reaction => {
+        reaction.watiams = reaction.members.map(memberId => {
+            const row = rows.find(row => row.get('discord_id') === memberId);
+            return row ? row.get('watiam') : null;
+        }).filter(watiam => !!watiam);
+    });
+
+    // reply
+    await interaction.reply({
+        content: `Here is a list of watiams of reacted members:\n-# Members without watiams in database will not be listed.\n` +
+                reactions.map(reaction => {
+                    return `## Reaction: ${reaction.emoji}\n\`\`\`\n${reaction.watiams?.join('\n')}\`\`\``
+                }).join('\n'),
+        ephemeral: true
+    });
+    return;
+}
 
 // Slash commands and context menu
 // Register slash command and context menu
@@ -1453,9 +1486,17 @@ client.once('ready', async () => {
                 .setContexts(InteractionContextType.Guild)
                 .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
         ),
+        guild.commands.create(
+            new ContextMenuCommandBuilder()
+                .setName('export_reaction_members')
+                .setNameLocalization('en-US', 'Export Reaction Members')
+                .setType(ApplicationCommandType.Message as ContextMenuCommandType)
+                .setContexts(InteractionContextType.Guild)
+                .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+        ),
     ]);
 });
-            
+
         
 // Handle slash commands
 client.on('interactionCreate', async (interaction) => {
@@ -1477,6 +1518,7 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // Handle context menu
+// Handle both user and message context menu commands
 client.on('interactionCreate', async (interaction) => {
     if (interaction.guildId !== env.SERVER_ID) return;
     if (!interaction.isContextMenuCommand()) return;
@@ -1516,6 +1558,21 @@ client.on('interactionCreate', async (interaction) => {
             roleIds.push(env.ROLE_ID.CURRENT_UW_STUDENT);
         }
         await manualAddVerifiedRoles(interaction as BotInteraction, roleIds, targetMember as GuildMember, member, targetMassage);
+    }
+});
+// Handle message context menu
+client.on('interactionCreate', async (interaction) => {
+    if (interaction.guildId !== env.SERVER_ID) return;
+    if (!interaction.isContextMenuCommand()) return;
+    if (!interaction.guild) return;
+    if (!interaction.isMessageContextMenuCommand()) return;
+
+    const { commandName } = interaction;
+    const targetMessage = interaction.targetMessage;
+    
+
+    if (commandName === 'export_reaction_members') {
+        await exportReactionMembers(interaction as BotInteraction, targetMessage);
     }
 });
 
