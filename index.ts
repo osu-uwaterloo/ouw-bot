@@ -1644,7 +1644,7 @@ client.on('messageCreate', async (message) => {
     }
 
     if (message.content && !message.author.bot) {
-        if (message.content.toLowerCase().match(/https:\/\/tenor\.com\/view\/(.*?)nailong/g)) {
+        if (message.content.toLowerCase().match(/https:\/\/tenor\.com\/view\/(.*?)(nailong|yellow(.*?)(dragon|dino)|16296218)/g)) {
             message.react('🚫');
             const hasDuplicatedChar = (str: string) => str.length !== new Set(str).size;
             const noDuplicateRandom = (min: number, max: number) => {
