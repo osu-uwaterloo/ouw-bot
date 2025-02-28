@@ -1384,11 +1384,14 @@ async function onGetTwitch2FACode(interaction: ButtonInteraction) {
 
 // export reaction members watiams
 async function exportReactionMembers(interaction: BotInteraction, message: Message) {
+    // defer interaction
+    await interaction.deferReply({ ephemeral: true });
+
+
     // refresh cache
     await message.fetch();
     await Promise.all(message.reactions.cache.map(reaction => reaction.users.fetch()));
 
-    console.log(message.reactions.cache);
     const reactions: { emoji: string | null; members: string[]; watiams?: string[] }[] = message.reactions.cache.map(reaction => {
         return {
             emoji: reaction.emoji.id ? `\`:${reaction.emoji.name}:\`` : reaction.emoji.name,
@@ -1407,7 +1410,7 @@ async function exportReactionMembers(interaction: BotInteraction, message: Messa
     });
 
     // reply
-    await interaction.reply({
+    await interaction.followUp({
         content: `Here is a list of watiams of reacted members:\n-# Members without watiams in database will not be listed.\n` +
                 reactions.map(reaction => {
                     return `## Reaction: ${reaction.emoji}\n\`\`\`\n${reaction.watiams?.join('\n')}\`\`\``
