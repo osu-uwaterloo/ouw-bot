@@ -18,7 +18,8 @@ import {
     PermissionsBitField,
     ChannelType,
     Partials,
-    SlashCommandBuilder
+    SlashCommandBuilder,
+    ActivityType
 } from 'discord.js';
 import express from 'express';
 import schedule from 'node-schedule';
@@ -1817,3 +1818,8 @@ app.listen(PORT, () => {
 });
 
 client.login(env.DISCORD_BOT_TOKEN);
+
+client.once('ready', () => {
+    // client.user?.setPresence({ activities: [] });
+    client.user?.setActivity('Photon Pulse', { type: ActivityType.Listening });
+});
