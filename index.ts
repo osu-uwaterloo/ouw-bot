@@ -1698,7 +1698,7 @@ client.on('messageCreate', async (message) => {
     const bySelf = message.author.id === client.user?.id;
     const channelId = message.channelId;
     const content = message.content.trim().toLowerCase();
-    if (content.match(/^[!>][a-zA-Z]+/)) return; // ignore bot commands
+    if (content.match(/^[!>][a-z]+/)) return; // ignore bot commands
     if (!channelLatestMessages[channelId]) channelLatestMessages[channelId] = [];
     channelLatestMessages[channelId].push({ text: content, bySelf, time: message.createdAt });
     while (
