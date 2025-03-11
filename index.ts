@@ -21,7 +21,7 @@ import {
     SlashCommandBuilder,
     ActivityType
 } from 'discord.js';
-import express from 'express';
+import express, { text } from 'express';
 import schedule from 'node-schedule';
 import env from './env';
 import { encryptUserId, decryptUserId, generateRandomToken } from './encryption';
@@ -1686,6 +1686,56 @@ client.on('messageCreate', async (message) => {
         }
     }
     
+});
+
+// Fun: follow up on consecutive repeated messages
+let channelLatestMessages: {[channelId: string]: {text: string, bySelf: boolean, time: Date}[]} = {};
+client.on('messageCreate', async (message) => {
+    if (message.guildId !== env.SERVER_ID) return;
+    if (!message.member) return;
+    if (!message.content) return;
+    if (message.author.bot) return; // we don't count bot messages, even if it's the bot itself. we add the message sent by bot to the list separately later
+    const bySelf = message.author.id === client.user?.id;
+    const channelId = message.channelId;
+    const content = message.content.trim().toLowerCase();
+    if (!channelLatestMessages[channelId]) channelLatestMessages[channelId] = [];
+    channelLatestMessages[channelId].push({ text: content, bySelf, time: message.createdAt });
+    while (
+        channelLatestMessages[channelId].length > 150 ||
+        (channelLatestMessages[channelId].length > 1 && new Date().getTime() - channelLatestMessages[channelId][0].time.getTime() > 1000 * 60 * 60 * 12)
+    ) {
+        channelLatestMessages[channelId].shift();
+    }
+    let consecutiveLength = 0;
+    for (let i = channelLatestMessages[channelId].length - 1; i >= 0 && channelLatestMessages[channelId][i].text === content; i--) {
+        consecutiveLength++;
+    }
+    if (consecutiveLength < 3) return;
+
+    // check if the bot already followed up
+    // consecutive non-content 10 messages will break the streak
+    // count all messages in the streak, if there is a message that is sent by the bot, do not follow up
+    let streakBreakCounter = 0;
+    for (let i = channelLatestMessages[channelId].length - 1; i >= 0; i--) {
+        if (channelLatestMessages[channelId][i].text === content) {
+            streakBreakCounter = 0;
+            if (channelLatestMessages[channelId][i].bySelf) {
+                // if the bot already followed up, do not follow up again
+                return;
+            }
+        } else {
+            streakBreakCounter++;
+            if (streakBreakCounter >= 10) {
+                break;
+            }
+        }
+    }
+
+    // follow up
+    channelLatestMessages[channelId].push({ text: content, bySelf: true, time: new Date() });
+    setTimeout(() => message.channel.send({
+        content: message.content.trim()
+    }), 1500);
 });
 
 // Easter egg: react cat to meowssages
