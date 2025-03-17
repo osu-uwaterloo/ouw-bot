@@ -156,7 +156,7 @@ app.post('/send-verification-email', async (req: express.Request, res: express.R
     
     // Send email to the user
     const token = verificationInfo.token;
-    const link = `${env.URL}/email-verify/${discordId}/${token}`;
+    const link = `${env.URL}/email-verify/click/${discordId}/${token}`;
     const text = `Click the link to verify your email: ${link}. The link will expire in 1 hour. If you did not request this, please DO NOT click the link and ignore this email.`;
     const html = getTemplate('email', { verificationLink: link }); // TODO: Make the email template beautiful
     const to = `${watiam}@uwaterloo.ca`;
@@ -204,6 +204,11 @@ app.post('/send-verification-email', async (req: express.Request, res: express.R
         emailSent: verificationInfo.emailSent,
         nextRetry: nextRetry
     });
+});
+
+app.get('/email-verify/click/:encryptedUserId/:token', async (req: express.Request, res: express.Response): Promise<any> => {
+    // Redirect in javascript to prevent email client scanning accessing the link
+    res.send(getTemplate('email-click', {redirectUrl: `${env.URL}/email-verify/${req.params.encryptedUserId}/${req.params.token}` }));
 });
 
 app.get('/email-verify/:encryptedUserId/:token', async (req: express.Request, res: express.Response): Promise<any> => {
