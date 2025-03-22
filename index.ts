@@ -1393,7 +1393,6 @@ async function exportReactionMembers(interaction: BotInteraction, message: Messa
     // defer interaction
     await interaction.deferReply({ ephemeral: true });
 
-
     // refresh cache
     await message.fetch();
     await Promise.all(message.reactions.cache.map(reaction => reaction.users.fetch()));
@@ -1423,7 +1422,34 @@ async function exportReactionMembers(interaction: BotInteraction, message: Messa
                 }).join('\n'),
         ephemeral: true
     });
-    return;
+}
+
+// view member info
+async function viewMemberInfo(interaction: BotInteraction, member: GuildMember) {
+    const userId = member.id;
+    const row = await sheet.findRowByKeyValue('discord_id', userId);
+
+    const embed = new EmbedBuilder()
+        .setTitle("User Info")
+        .setColor("#bbbbbb");
+    
+    if (row) {
+        for (let [key, value] of Object.entries(row.toObject())) {
+            if (!value) value = 'N/A';
+            embed.addFields({ name: key, value: value });
+        }
+    } else {
+        embed.setDescription('Cannot find the user in the database.');
+    }
+
+    embed.setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL(), url: `https://discord.com/users/${member.id}` });
+    embed.setFooter({ text: `ID: ${userId}` });
+    embed.setThumbnail(member.user.displayAvatarURL());
+
+    await interaction.reply({
+        embeds: [embed],
+        ephemeral: true
+    });
 }
 
 // Slash commands and context menu
@@ -1474,6 +1500,14 @@ client.once('ready', async () => {
             new ContextMenuCommandBuilder()
                 .setName('give_verified_uw_student_role')
                 .setNameLocalization('en-US', 'Give Verified & UW Student Role')
+                .setType(ApplicationCommandType.User as ContextMenuCommandType)
+                .setContexts(InteractionContextType.Guild)
+                .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+        ),
+        guild.commands.create(
+            new ContextMenuCommandBuilder()
+                .setName('view_member_info')
+                .setNameLocalization('en-US', 'View Member Info')
                 .setType(ApplicationCommandType.User as ContextMenuCommandType)
                 .setContexts(InteractionContextType.Guild)
                 .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
@@ -1582,6 +1616,20 @@ client.on('interactionCreate', async (interaction) => {
 
     if (commandName === 'export_reaction_members') {
         await exportReactionMembers(interaction as BotInteraction, targetMessage);
+    }
+});
+// Handle user context menu
+client.on('interactionCreate', async (interaction) => {
+    if (interaction.guildId !== env.SERVER_ID) return;
+    if (!interaction.isContextMenuCommand()) return;
+    if (!interaction.guild) return;
+    if (!interaction.isUserContextMenuCommand()) return;
+
+    const { commandName } = interaction;
+    const targetMember = interaction.targetMember;
+
+    if (commandName === 'view_member_info') {
+        await viewMemberInfo(interaction as BotInteraction, targetMember as GuildMember);
     }
 });
 
