@@ -2008,7 +2008,8 @@ client.once('ready', () => {
             if (!msgQueue.length) {
                 // fetch if the queue is empty
                 try {
-                    channelLatestMessages[channelId] = (await message.channel.messages.fetch({ limit: 25 }))
+                    const msgs = await message.channel.messages.fetch({ limit: 25 });
+                    channelLatestMessages[channelId] = msgs
                         .filter(msg => !msg.webhookId && !msg.author.bot && message.member)
                         .reverse()
                         .map(msg => {
@@ -2016,11 +2017,11 @@ client.once('ready', () => {
                         });
                     msgQueue = channelLatestMessages[channelId];
                     console.log("fetched messages", msgQueue);
-                    for (const msg of msgQueue) {
-                        const user = await message.guild!.members.fetch(msg.userId).catch(() => null);
-                        if (!user) continue;
+                    msgs.forEach(msg => {
+                        const user = msg.member as GuildMember;
+                        if (!user) return;
                         recordOriginalName(user);
-                    }
+                    });
                 } catch (e) {
                     console.error(e);
                 }
