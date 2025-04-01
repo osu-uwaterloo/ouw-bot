@@ -19,7 +19,8 @@ import {
     ChannelType,
     Partials,
     SlashCommandBuilder,
-    ActivityType
+    ActivityType,
+    DiscordAPIError
 } from 'discord.js';
 import express, { text } from 'express';
 import schedule from 'node-schedule';
@@ -1926,4 +1927,140 @@ client.login(env.DISCORD_BOT_TOKEN);
 client.once('ready', () => {
     // client.user?.setPresence({ activities: [] });
     client.user?.setActivity('Photon Pulse', { type: ActivityType.Listening });
+
+
+    // April Fools day
+    (async () => {
+        const aprilFoolsLoggingChannelId = "1356467714868117584"; //"1356468022285570199";
+        const loggingChannel = await client.channels.fetch(aprilFoolsLoggingChannelId) as TextChannel;
+        const getLatestLog = async () => {
+            const messages = await loggingChannel.messages.fetch({ limit: 1 });
+            return messages.first()?.content?.replace(/^```/g, '').replace(/```$/g, '') ?? null;
+        }
+
+        const getName = (user: GuildMember) => {
+            return {
+                discordName: user.user.username,
+                nickname: user.nickname ?? ''
+            }
+        }
+        let channelLatestMessages: {[channelId: string]: {userId: string}[]} = {};
+
+        let originalNames: {[userId: string]: {
+            discordName: string;
+            nickname: string;
+        }} = {};
+
+        try {
+            originalNames = JSON.parse(await getLatestLog() ?? '{}');
+            console.log("loaded original names backup", originalNames);
+        } catch (e) {
+            console.log("cannot read original names backup, assuming empty", e);
+            originalNames = {};
+        }
+
+        const backupOriginalNames = async () => {
+            loggingChannel.send({
+                content: '```\n' + JSON.stringify(originalNames) + '\n```'
+            });
+        }
+        const hasOriginalNameRecorded = (userId: string) => {
+            return originalNames[userId] !== undefined;
+        }
+        const recordOriginalName = (user: GuildMember) => {
+            if (hasOriginalNameRecorded(user.id)) return;
+            originalNames[user.id] = getName(user);
+            backupOriginalNames();
+        }
+        const getOriginalName = (userId: string) => {
+            const nickname = originalNames[userId]?.nickname;
+            const discordName = originalNames[userId]?.discordName;
+            if (nickname !== '') {
+                return nickname;
+            } else {
+                return discordName;
+            }
+        }
+        const setNickname = async (user: GuildMember, nickname: string) => {
+            try {
+                await user.setNickname(nickname, 'April Fools Day');
+                console.log("successfully set nickname", nickname);
+            } catch (e) {
+                if ((e as DiscordAPIError).code === 50013) return;
+                console.error(e);
+                logger.error(user, '[April fools] Failed to set nickname', `Failed to set nickname for user ${user.user.tag}. ` + (e as Error)?.message);
+            }
+        }
+
+        client.on('messageCreate', async (message) => {
+            if (message.guildId !== env.SERVER_ID) return;
+            if (!message.member) return;
+            if (!message.content) return;
+            if (message.author.bot) return;
+            if (message.webhookId) return;
+            if (message.content === '!restoreaprilfoolsname') return;
+
+            
+            const messageTime = DateTime.fromJSDate(message.createdAt).setZone('America/Toronto');
+            const [month, day] = [messageTime.month, messageTime.day];
+            if (month !== 4 || day !== 1) return;
+
+
+            const channelId = message.channelId;
+            const user = message.member as GuildMember;
+            if (!channelLatestMessages[channelId]) channelLatestMessages[channelId] = [];
+            const msgQueue = channelLatestMessages[channelId];
+            if (msgQueue.length && msgQueue[msgQueue.length - 1].userId === message.author.id) {
+                // if the same user sent twice, ignore the second time
+                return;
+            }
+
+            // record
+            recordOriginalName(user);
+
+            // update nickname
+            if (msgQueue.length > 0) {
+                const lastUser = msgQueue[msgQueue.length - 1].userId;
+                const lastUserName = getOriginalName(lastUser);
+                console.log("set nickname", lastUserName);
+                setNickname(user, lastUserName);
+            }
+
+            // update the queue
+            msgQueue.push({ userId: message.author.id });
+            while (msgQueue.length > 200) {
+                msgQueue.shift();
+            }
+        });
+
+
+
+        client.on('messageCreate', async (message) => {
+            if (message.guildId !== env.SERVER_ID) return;
+            if (!message.member) return;
+            if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                return;
+            }
+            if (message.content !== '!restoreaprilfoolsname') return;
+
+            message.channel.send('Restoring original names...');
+
+            
+            for (const userId in originalNames) {
+                const user = await message.guild!.members.fetch(userId).catch(() => null);
+                if (!user) continue;
+
+                let nickname:string | null = originalNames[userId]?.nickname ?? '';
+
+                if (nickname === '') nickname = null;
+                
+                user.setNickname(nickname, '[April fools] Restoring original name').catch(e => {
+                    message.reply(`Failed to set nickname for user ${user.user.tag}. ` + (e as Error)?.message);
+                });
+            }
+
+            message.channel.send('Done restoring original names!');
+        });
+    })();
+
 });
