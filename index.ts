@@ -2014,6 +2014,7 @@ client.once('ready', () => {
                         .map(msg => {
                             return { userId: msg.author.id };
                         });
+                    console.log("fetched messages", msgQueue);
                 } catch (e) {
                     console.error(e);
                 }
