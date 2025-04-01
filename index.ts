@@ -1931,13 +1931,6 @@ client.once('ready', () => {
 
     // April Fools day
     (async () => {
-        const aprilFoolsLoggingChannelId = "1356467714868117584"; //"1356468022285570199";
-        const loggingChannel = await client.channels.fetch(aprilFoolsLoggingChannelId) as TextChannel;
-        const getLatestLog = async () => {
-            const messages = await loggingChannel.messages.fetch({ limit: 1 });
-            return messages.first()?.content?.replace(/^```/g, '').replace(/```$/g, '') ?? null;
-        }
-
         const getName = (user: GuildMember) => {
             return {
                 discordName: user.user.displayName,
@@ -1952,7 +1945,7 @@ client.once('ready', () => {
         }} = {};
 
         try {
-            originalNames = JSON.parse(await getLatestLog() ?? '{}');
+            originalNames = JSON.parse(await sheet.kvGet('april_fools_original_names_backup') ?? '{}');
             console.log("loaded original names backup", originalNames);
         } catch (e) {
             console.log("cannot read original names backup, assuming empty", e);
@@ -1960,9 +1953,11 @@ client.once('ready', () => {
         }
 
         const backupOriginalNames = async () => {
-            loggingChannel.send({
-                content: '```\n' + JSON.stringify(originalNames) + '\n```'
-            });
+            try {
+                await sheet.kvSet('april_fools_original_names_backup', JSON.stringify(originalNames));
+            } catch (e) {
+                console.error(e);
+            }
         }
         const hasOriginalNameRecorded = (userId: string) => {
             return originalNames[userId] !== undefined;

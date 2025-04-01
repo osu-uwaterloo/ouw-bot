@@ -109,7 +109,28 @@ const addMember = async (
     });
 }
 
+// Key-value storage emulated
+const kvSheet = doc.sheetsByIndex[2];
+const kvGet = async (key: string) => {
+    const rows = await kvSheet.getRows();
+    const row = rows.find(row => row.get('key') === key);
+    if (row) {
+        return row.get('value');
+    } else {
+        return null;
+    }
+}
 
+const kvSet = async (key: string, value: string) => {
+    const rows = await kvSheet.getRows();
+    const row = rows.find(row => row.get('key') === key);
+    if (row) {
+        row.assign({ value });
+        await row.save();
+    } else {
+        await kvSheet.addRow({ key, value });
+    }
+}
 
 export {
     findRowByKeyValue,
@@ -122,5 +143,8 @@ export {
     updateRow,
     deleteRow,
     
-    addMember
+    addMember,
+
+    kvGet,
+    kvSet
 };
