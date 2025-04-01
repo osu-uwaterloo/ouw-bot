@@ -1990,7 +1990,6 @@ client.once('ready', () => {
         client.on('messageCreate', async (message) => {
             if (message.guildId !== env.SERVER_ID) return;
             if (!message.member) return;
-            if (!message.content) return;
             if (message.author.bot) return;
             if (message.webhookId) return;
             if (message.content === '!restoreaprilfoolsname') return;
@@ -2004,7 +2003,22 @@ client.once('ready', () => {
             const channelId = message.channelId;
             const user = message.member as GuildMember;
             if (!channelLatestMessages[channelId]) channelLatestMessages[channelId] = [];
-            const msgQueue = channelLatestMessages[channelId];
+            let msgQueue = channelLatestMessages[channelId];
+
+            if (!msgQueue.length) {
+                // fetch if the queue is empty
+                try {
+                    msgQueue = (await message.channel.messages.fetch({ limit: 25 }))
+                        .filter(msg => !msg.webhookId && !msg.author.bot && message.member)
+                        .reverse()
+                        .map(msg => {
+                            return { userId: msg.author.id };
+                        });
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
             if (msgQueue.length && msgQueue[msgQueue.length - 1].userId === message.author.id) {
                 // if the same user sent twice, ignore the second time
                 return;
