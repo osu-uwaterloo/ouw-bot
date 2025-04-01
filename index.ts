@@ -1940,7 +1940,7 @@ client.once('ready', () => {
 
         const getName = (user: GuildMember) => {
             return {
-                discordName: user.user.username,
+                discordName: user.user.displayName,
                 nickname: user.nickname ?? ''
             }
         }
