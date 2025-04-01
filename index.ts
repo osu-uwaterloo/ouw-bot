@@ -2008,10 +2008,10 @@ client.once('ready', () => {
             if (!msgQueue.length) {
                 // fetch if the queue is empty
                 try {
-                    const msgs = await message.channel.messages.fetch({ limit: 25 });
-                    channelLatestMessages[channelId] = msgs
+                    const msgs = (await message.channel.messages.fetch({ limit: 25 }))
                         .filter(msg => !msg.webhookId && !msg.author.bot && message.member)
-                        .reverse()
+                        .reverse();
+                    channelLatestMessages[channelId] = msgs
                         .map(msg => {
                             return { userId: msg.author.id };
                         });
