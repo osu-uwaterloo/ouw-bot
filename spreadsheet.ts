@@ -110,7 +110,7 @@ const addMember = async (
 }
 
 // Key-value storage emulated
-const kvSheet = doc.sheetsByIndex[2];
+const kvSheet = doc.sheetsByIndex[1];
 const kvGet = async (key: string) => {
     const rows = await kvSheet.getRows();
     const row = rows.find(row => row.get('key') === key);
