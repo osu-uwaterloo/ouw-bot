@@ -2043,7 +2043,9 @@ client.once('ready', () => {
                 setNickname(user, lastUserName);
             }*/
             console.log("set nickname", user.user.displayName);
-            setNickname(user, "o!uw bot");
+            if (user.nickname !== "o!uw bot") {
+                setNickname(user, "o!uw bot");
+            }
 
             // update the queue
             msgQueue.push({ userId: message.author.id });
