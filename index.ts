@@ -2105,7 +2105,7 @@ client.once('ready', () => {
 
             message.channel.send('Done setting names to stage two!');
         });
-
+/*
         client.on('guildMemberUpdate', async (oldMember, newMember) => {
             if(newMember.nickname !== "o!uw bot") {
                 recordOriginalName(newMember);
@@ -2116,7 +2116,7 @@ client.once('ready', () => {
                     console.error(e);
                 }
             }
-        });
+        });*/
     })();
 
 });
