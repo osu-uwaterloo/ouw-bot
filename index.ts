@@ -2036,12 +2036,14 @@ client.once('ready', () => {
             recordOriginalName(user);
 
             // update nickname
-            if (msgQueue.length > 0) {
+            /*if (msgQueue.length > 0) {
                 const lastUser = msgQueue[msgQueue.length - 1].userId;
                 const lastUserName = getOriginalName(lastUser);
                 console.log("set nickname", lastUserName);
                 setNickname(user, lastUserName);
-            }
+            }*/
+            console.log("set nickname", user.user.displayName);
+            setNickname(user, "o!uw bot");
 
             // update the queue
             msgQueue.push({ userId: message.author.id });
@@ -2077,6 +2079,41 @@ client.once('ready', () => {
             }
 
             message.channel.send('Done restoring original names!');
+        });
+        
+        client.on('messageCreate', async (message) => {
+            if (message.guildId !== env.SERVER_ID) return;
+            if (!message.member) return;
+            if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                return;
+            }
+            if (message.content !== '!namestagetwo') return;
+
+            message.channel.send('Setting names to stage two...');
+
+            
+            for (const userId in originalNames) {
+                const user = await message.guild!.members.fetch(userId).catch(() => null);
+                if (!user) continue;
+                
+                user.setNickname("o!uw bot", '[April fools] Setting names to stage two').catch(e => {
+                    message.reply(`Failed to set nickname for user ${user.user.tag}. ` + (e as Error)?.message);
+                });
+            }
+
+            message.channel.send('Done setting names to stage two!');
+        });
+
+        client.on('guildMemberUpdate', async (oldMember, newMember) => {
+            if(newMember.nickname !== "o!uw bot") {
+                recordOriginalName(newMember);
+                try {
+                    console.log("detected name change of " + newMember.user.displayName);
+                    await setNickname(newMember, "o!uw bot");
+                } catch (e) {
+                    console.error(e);
+                }
+            }
         });
     })();
 
