@@ -31,5 +31,8 @@
   "scripts": {
     "start": "npx tsx index.ts",
     "typecheck": "tsc"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }
