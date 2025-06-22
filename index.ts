@@ -1836,6 +1836,74 @@ client.on('messageCreate', async (message) => {
     }
 });
 
+// Fun: react WYSI to images that contains 727
+client.on('messageCreate', async (message) => {
+    if (message.guildId !== env.SERVER_ID) return;
+    if (!message.member) return;
+    if (message.author.bot) return;
+    if (!message.attachments) return;
+    const images = message.attachments.filter(attachment => attachment.contentType?.startsWith('image/'));
+    if (images.size === 0) return;
+    const imageUrls = images.map(image => {
+        let [w, h]:number[] = [image.width!, image.height!];
+        const sizeLimit = 512;
+        if (w >= h && w > sizeLimit) {
+            h = Math.floor(h * (sizeLimit / w));
+            w = sizeLimit;
+        } else {
+            w = Math.floor(w * (sizeLimit / h));
+            h = sizeLimit;
+        }
+        return image.proxyURL.replace(/&$/, '') + `&width=${w}&height=${h}`;
+    });
+    // console.log('Detecting 727 in images:', imageUrls);
+    
+    const detectEndpoint = env.DETECT_727_ENDPOINT;
+    if (!detectEndpoint) return;
+    const result = await Promise.all(imageUrls.map(async (imageUrl) => {
+        try {
+            // download image, then send to the endpoint by POST request with base64
+            const discordResponse = await fetch(imageUrl);
+            if (!discordResponse.ok) {
+                console.error(`Error fetching image: ${discordResponse.status} ${discordResponse.statusText}`);
+                return false;
+            }
+            const imageBuffer = await discordResponse.arrayBuffer();
+            const imageBase64 = Buffer.from(imageBuffer).toString('base64');
+
+            // console.log(imageBase64.slice(0, 50) + '...');
+
+            const response = await fetch(detectEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ imageBase64: imageBase64 })
+            });
+            if (!response.ok) {
+                console.error(`Error detecting 727: ${response.status} ${response.statusText}`);
+                return false;
+            }
+            const text = (await response.text()).trim();
+            return text === 'true';
+        } catch (e) {
+            console.error('Error detecting 727:', e);
+        }
+        return false;
+    }));
+    if (result.some(detected => detected)) {
+        try {
+            await message.reply('WYSI');
+            await message.react('🇼');
+            await message.react('🇾');
+            await message.react('🇸');
+            await message.react('🇮');
+        } catch (e) {
+            console.error('Error reacting to message:', e);
+        }
+    }
+});
+
 // Direct message forwarding
 client.on('messageCreate', async (message) => {
     if (message.channel.type !== ChannelType.DM) return;
