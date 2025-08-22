@@ -1277,7 +1277,7 @@ async function onVerifyInventionRequest(interaction: ButtonInteraction) {
     
     const isPreviouslyEdited = !!botMessage.editedAt;
 
-    if (isMod) {
+    if (/*isMod*/!isInviter) {
         if (isYes) {
             logger.success(invitee, 'Invitation verification request accepted by a mod', `A moderator has verified this user\'s invitation verification request. They have been given the verified role. [Message Link](${botMessage.url})`, embed => {
                 embed.addFields({ name: 'Accepted by', value: `<@${interaction.user.id}>` });
