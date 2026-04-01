@@ -1207,7 +1207,7 @@ client.on('messageCreate', async (message) => {
 
             If you do, please click the button below, and they will be automatically verified. If you don't know them, please click the other button.
 
-            -# The buttons are only for ${inviters.map(inviter => `<@${inviter.id}>`).join(', ')} and <@&${env.EXEC_ROLE_ID}>.
+            -# The buttons are only for ${inviters.map(inviter => `<@${inviter.id}>`).join(', ')} and Club Executives.
         `.replace(/^[ \t\r\f\v]+/gm, '').trim(),
         components: [
             new ActionRowBuilder<ButtonBuilder>().addComponents(
