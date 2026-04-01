@@ -2054,18 +2054,22 @@ client.once('ready', () => {
                 return discordName;
             }
         }
+        const settingNicknameFor = new Set<string>();
         const setNickname = async (user: GuildMember, nickname: string) => {
             try {
+                aprilFoolsNames[user.id] = nickname;
+                settingNicknameFor.add(user.id);
                 await user.setNickname(nickname, 'April Fools Day');
                 console.log("successfully set nickname", nickname);
                 if (!aprilFoolsNames[user.id] || aprilFoolsNames[user.id] !== nickname) {
-                    aprilFoolsNames[user.id] = nickname;
                     await sheet.kvSet('april_fools_names', JSON.stringify(aprilFoolsNames));
                 }
             } catch (e) {
                 if ((e as DiscordAPIError).code === 50013) return;
                 console.error(e);
                 logger.error(user, '[April fools] Failed to set nickname', `Failed to set nickname for user ${user.user.tag}. ` + (e as Error)?.message);
+            } finally {
+                setTimeout(() => settingNicknameFor.delete(user.id), 3000);
             }
         }
 
@@ -2191,6 +2195,7 @@ client.once('ready', () => {
         client.on('guildMemberUpdate', async (oldMember, newMember) => {
             if (newMember.guild.id !== env.SERVER_ID) return;
             if (oldMember.nickname === newMember.nickname) return;
+            if (settingNicknameFor.has(newMember.id)) return;
     
             const messageTime = DateTime.fromJSDate(new Date()).setZone('America/Toronto');
             const [month, day] = [messageTime.month, messageTime.day];
