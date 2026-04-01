@@ -2190,20 +2190,11 @@ client.once('ready', () => {
 
         client.on('guildMemberUpdate', async (oldMember, newMember) => {
             if (newMember.guild.id !== env.SERVER_ID) return;
+            if (oldMember.nickname === newMember.nickname) return;
     
             const messageTime = DateTime.fromJSDate(new Date()).setZone('America/Toronto');
             const [month, day] = [messageTime.month, messageTime.day];
             if (month !== 4 || day !== 1) return;
-
-            let aprilFoolsNames: {[userId: string]: string} = {};
-
-            try {
-                aprilFoolsNames = JSON.parse(await sheet.kvGet('april_fools_names') ?? '{}');
-                console.log("loaded april fools names backup", aprilFoolsNames);
-            } catch (e) {
-                console.log("cannot read april fools names backup, assuming empty", e);
-                aprilFoolsNames = {};
-            }
 
             if(aprilFoolsNames[newMember.id] && newMember.nickname !== aprilFoolsNames[newMember.id]) {
                 try {
