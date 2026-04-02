@@ -2122,16 +2122,16 @@ client.once('ready', () => {
             recordOriginalName(user);
 
             // update nickname
-            if (msgQueue.length > 0) {
+            /*if (msgQueue.length > 0) {
                 const lastUser = msgQueue[msgQueue.length - 1].userId;
                 const lastUserName = getOriginalName(lastUser);
                 console.log("set nickname", lastUserName);
                 setNickname(user, lastUserName);
-            }
-            console.log("set nickname", user.user.displayName);
-            /*if (user.nickname !== "o!uw bot") {
-                setNickname(user, "o!uw bot");
             }*/
+            console.log("set nickname", user.user.displayName);
+            if (user.nickname !== "infinity21") {
+                setNickname(user, "infinity21");
+            }
 
             // update the queue
             msgQueue.push({ userId: message.author.id });
@@ -2184,7 +2184,7 @@ client.once('ready', () => {
                 const user = await message.guild!.members.fetch(userId).catch(() => null);
                 if (!user) continue;
                 
-                user.setNickname("o!uw bot", '[April fools] Setting names to stage two').catch(e => {
+                user.setNickname("infinity21", '[April fools] Setting names to stage two').catch(e => {
                     message.reply(`Failed to set nickname for user ${user.user.tag}. ` + (e as Error)?.message);
                 });
             }
@@ -2192,7 +2192,7 @@ client.once('ready', () => {
             message.channel.send('Done setting names to stage two!');
         });
 
-        client.on('guildMemberUpdate', async (oldMember, newMember) => {
+        /*client.on('guildMemberUpdate', async (oldMember, newMember) => {
             if (newMember.guild.id !== env.SERVER_ID) return;
             if (oldMember.nickname === newMember.nickname) return;
             if (settingNicknameFor.has(newMember.id)) return;
@@ -2209,18 +2209,23 @@ client.once('ready', () => {
                     console.error(e);
                 }
             }
-        });
-/*
+        });*/
+
         client.on('guildMemberUpdate', async (oldMember, newMember) => {
-            if(newMember.nickname !== "o!uw bot") {
+            if (newMember.guild.id !== env.SERVER_ID) return;
+    
+            const messageTime = DateTime.fromJSDate(new Date()).setZone('America/Toronto');
+            const [month, day] = [messageTime.month, messageTime.day];
+            if (month !== 4 || day !== 1) return;
+            if(newMember.nickname !== "infinity21") {
                 recordOriginalName(newMember);
                 try {
                     console.log("detected name change of " + newMember.user.displayName);
-                    await setNickname(newMember, "o!uw bot");
+                    await setNickname(newMember, "infinity21");
                 } catch (e) {
                     console.error(e);
                 }
             }
-        });*/
+        });
     })();
 });
