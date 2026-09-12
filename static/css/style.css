@@ -329,6 +329,32 @@ body {
 	}
 }
 
+.mobile-only {
+	display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+	.desktop-only {
+		display: none;
+	}
+
+	.mobile-only {
+		display: inline;
+	}
+
+	.verification-actions .outlook-action {
+		display: none;
+	}
+
+	.verification-actions .mailto-action {
+		background-color: var(--accent-colour);
+		color: var(--dark-text);
+		padding-inline: 1.35em;
+		flex: 1;
+		text-align: center;
+	}
+}
+
 
 .textfield {
 	background-color: inherit;

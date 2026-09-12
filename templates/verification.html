@@ -15,7 +15,7 @@
             <div class="card-body">
                 <p class="verify-for">Discord account: <strong>{{ discordUsername }}</strong></p>
                 <ol class="verification-steps">
-                    <li><span>Open the prepared email in Outlook.</span></li>
+                    <li><span class="desktop-only">Open the prepared email in Outlook.</span><span class="mobile-only">Open the prepared email in your mail app.</span></li>
                     <li><span>Under <strong>From</strong>, choose your WatIAM address.</span></li>
                     <li><span>Click Send.</span></li>
                 </ol>
@@ -33,8 +33,8 @@
                 </div>
             </div>
             <div class="card-actions verification-actions">
-                <a class="button secondary" href="{{ mailtoUrl }}">Use another app</a>
-                <a class="button primary-action" href="{{ outlookComposeUrl }}" target="_blank" rel="noopener">Open Outlook</a>
+                <a class="button secondary mailto-action" href="{{ mailtoUrl }}"><span class="desktop-only">Use another app</span><span class="mobile-only">Open email app</span></a>
+                <a class="button primary-action outlook-action" href="{{ outlookComposeUrl }}" target="_blank" rel="noopener">Open Outlook</a>
             </div>
         </div>
 
