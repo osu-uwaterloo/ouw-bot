@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ouw-email-verification",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-12",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "BOT_INBOUND_URL": "https://ouw-bot.s23.moe/email-verification/inbound",
+    "VERIFICATION_ADDRESS": "verify@ouw.s23.moe"
+  }
+}

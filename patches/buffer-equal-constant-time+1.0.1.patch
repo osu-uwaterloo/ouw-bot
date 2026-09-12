@@ -1,0 +1,15 @@
+diff --git a/node_modules/buffer-equal-constant-time/index.js b/node_modules/buffer-equal-constant-time/index.js
+index 8f169d9..f5196a5 100644
+--- a/node_modules/buffer-equal-constant-time/index.js
++++ b/node_modules/buffer-equal-constant-time/index.js
+@@ -2,7 +2,9 @@
+ /*jshint node:true */
+ 'use strict';
+ var Buffer = require('buffer').Buffer; // browserify
+-var SlowBuffer = require('buffer').SlowBuffer;
++// SlowBuffer was removed in Node 25. It always shared Buffer's prototype, so
++// falling back to Buffer preserves this package's install/restore behavior.
++var SlowBuffer = require('buffer').SlowBuffer || Buffer;
+ 
+ module.exports = bufferEq;
+ 

@@ -12,8 +12,10 @@
     "google-auth-library": "^9.15.0",
     "google-spreadsheet": "^4.1.4",
     "luxon": "^3.5.0",
+    "mailauth": "^4.13.3",
     "node-schedule": "^2.1.1",
     "nodemailer": "^6.9.16",
+    "postal-mime": "^3.0.0",
     "speakeasy": "^2.0.0",
     "wcag-contrast": "^3.0.0"
   },
@@ -24,12 +26,18 @@
     "@types/node-schedule": "^2.1.7",
     "@types/nodemailer": "^6.4.17",
     "@types/speakeasy": "^2.0.10",
+    "patch-package": "^8.0.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   },
   "type": "module",
   "scripts": {
+    "postinstall": "patch-package",
     "start": "npx tsx index.ts",
+    "test": "tsx --test inbound-email.test.ts",
     "typecheck": "tsc"
+  },
+  "engines": {
+    "node": ">=20.18.1"
   }
 }

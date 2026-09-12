@@ -27,7 +27,8 @@ import schedule from 'node-schedule';
 import env from './env';
 import { encryptUserId, decryptUserId, generateRandomToken } from './encryption';
 import getTemplate from './template';
-import { sendEmail } from './email';
+import { timingSafeEqual } from 'node:crypto';
+import { parseVerificationEmail, verifyWaterlooDkim, VERIFICATION_SUBJECT_PREFIX } from './inbound-email.js';
 import * as sheet from './spreadsheet';
 import { GoogleSpreadsheetRow } from 'google-spreadsheet';
 import Logger from './logging';
@@ -58,18 +59,23 @@ const client = new Client({
 
 const logger = new Logger(client);
 
-interface verificationInfo {
+interface VerificationInfo {
     timestamp: number,
     interaction: BotInteraction, // The interaction context,
     expiry: number, // The timestamp when the verification link expires
     watiam?: string, // The watiam of the user
-    emailSent?: number, // The timestamp when the email was sent, if not sent, it's undefined,
-    retries?: number, // Number of retries
-    nextRetry?: number, // The verification token in the email
-    token?: string // The token for email verification
+    token?: string, // The token the user sends from their UW mailbox
+    status?: 'pending' | 'wrong-address' | 'processing' | 'verified',
+    statusMessage?: string,
+    receivedAddress?: string,
+    lastNotifiedAddress?: string,
+    membershipLink?: string,
 }
 
-const verificationPool = new Map<string, verificationInfo>();
+const verificationPool = new Map<string, VerificationInfo>();
+const VERIFICATION_ADDRESS = (env.EMAIL_VERIFICATION_ADDRESS ?? 'verify@ouw.s23.moe').toLowerCase();
+const VERIFICATION_CHALLENGE_TTL = 10 * 60 * 1000;
+const MAX_INBOUND_EMAIL_SIZE = 256 * 1024;
 
 
 const checkExpired = () => {
@@ -84,6 +90,82 @@ const checkExpired = () => {
 
 
 const PORT = process.env.PORT || 3000;
+
+function escapeHtml(value: string) {
+    return value.replace(/[&<>'"]/g, character => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#39;',
+        '"': '&quot;',
+    })[character]!);
+}
+
+function encodeComposeParams(params: Record<string, string>) {
+    return Object.entries(params)
+        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+        .join('&');
+}
+
+function bearerSecretMatches(authorization: string | undefined): boolean {
+    const expected = env.EMAIL_VERIFICATION_WEBHOOK_SECRET;
+    const provided = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (!expected || !provided) return false;
+
+    const expectedBytes = Buffer.from(expected);
+    const providedBytes = Buffer.from(provided);
+    return expectedBytes.length === providedBytes.length && timingSafeEqual(expectedBytes, providedBytes);
+}
+
+async function notifyVerificationUser(userId: string, message: string, interaction?: BotInteraction) {
+    try {
+        const guild = await client.guilds.fetch(env.SERVER_ID);
+        const member = await guild.members.fetch(userId);
+        await member.send(message);
+        return;
+    } catch (error) {
+        console.warn(`Could not DM verification update to Discord user ${userId}:`, error);
+    }
+
+    try {
+        await interaction?.followUp({ content: message, ephemeral: true });
+    } catch (error) {
+        console.warn(`Could not send an ephemeral verification update to Discord user ${userId}:`, error);
+    }
+}
+
+async function completeEmailVerification(userId: string, verificationInfo: VerificationInfo, watiam: string) {
+    const guild = await client.guilds.fetch(env.SERVER_ID);
+    const member = await guild.members.fetch(userId);
+    if (!member) throw new Error('Cannot find the verification user in the server.');
+
+    await member.roles.add(env.ROLE_ID.VERIFIED);
+    await member.roles.add(env.ROLE_ID.CURRENT_UW_STUDENT);
+
+    try {
+        await sheet.addMember(userId, member.user.username, watiam);
+    } catch (error) {
+        console.error('Error adding member to the sheet:', error);
+    }
+
+    logger.success(member, 'Has been verified', 'They proved ownership of their WatIAM address by sending an authenticated UWaterloo email.', embed => {
+        embed.addFields({ name: 'WatIAM', value: watiam });
+    });
+
+    const key = `${userId}-${Date.now() + 24 * 60 * 60 * 1000}`;
+    verificationInfo.watiam = watiam;
+    verificationInfo.status = 'verified';
+    verificationInfo.statusMessage = 'Your UWaterloo email has been verified.';
+    verificationInfo.membershipLink = `${env.URL}/membership/${encryptUserId(key)}?verified=true`;
+    verificationInfo.expiry = Date.now() + VERIFICATION_CHALLENGE_TTL;
+    verificationPool.set(userId, verificationInfo);
+
+    await notifyVerificationUser(
+        userId,
+        `You have been successfully verified as ${watiam}@uwaterloo.ca. Welcome to osu!uwaterloo!`,
+        verificationInfo.interaction,
+    );
+}
 
 // Define static routes, ./static/* will be served as /static/*
 app.use('/static', express.static('static'));
@@ -111,13 +193,41 @@ app.get('/verify/:encryptedUserId', async (req: express.Request, res: express.Re
         if (!verificationInfo) {
             return res.send(getTemplate('error', { message: 'Verification link does not exist or has expired. Try getting a new one from the server.' }));
         }
-        
+
+        if (!verificationInfo.token) {
+            verificationInfo.token = generateRandomToken();
+            verificationInfo.status = 'pending';
+            verificationInfo.expiry = Date.now() + VERIFICATION_CHALLENGE_TTL;
+            verificationPool.set(userId, verificationInfo);
+        }
+
+        const subject = `Verify osu!UWaterloo Discord account - ${VERIFICATION_SUBJECT_PREFIX} ${verificationInfo.token}`;
+        const body = [
+            '🔴 BEFORE YOU SEND: Change the From address to your WatIAM address (the one without a dot).',
+            '',
+            'Use: o123uw@uwaterloo.ca',
+            'Not: firstname.lastname@uwaterloo.ca',
+            '',
+            'Then send this email. Please do not change the verification code.',
+            '',
+            'Please verify my osu!UWaterloo Discord account.',
+            '',
+            `Verification code: ${VERIFICATION_SUBJECT_PREFIX} ${verificationInfo.token}`,
+        ].join('\r\n');
+        const outlookComposeUrl = `https://outlook.office.com/mail/deeplink/compose?${encodeComposeParams({
+            to: VERIFICATION_ADDRESS,
+            subject,
+            body,
+        })}`;
+        const mailtoUrl = `mailto:${VERIFICATION_ADDRESS}?${encodeComposeParams({ subject, body })}`;
+
         res.send(getTemplate('verification', {
             discordId: encryptedUserId,
-            discordUsername: username,
-            watiam: verificationInfo.watiam ?? '',
-            emailSent: !!verificationInfo.emailSent,
-            nextRetry: verificationInfo.nextRetry ?? false,
+            discordUsername: escapeHtml(username),
+            verificationAddress: escapeHtml(VERIFICATION_ADDRESS),
+            outlookComposeUrl: escapeHtml(outlookComposeUrl),
+            mailtoUrl: escapeHtml(mailtoUrl),
+            initialStatus: JSON.stringify(verificationInfo.status ?? 'pending'),
         }));
     } catch (error) {
         console.error('Error during verification:', error);
@@ -125,147 +235,120 @@ app.get('/verify/:encryptedUserId', async (req: express.Request, res: express.Re
     }
 });
 
-app.post('/send-verification-email', async (req: express.Request, res: express.Response): Promise<any> => {
-    const { discordId, watiam } = req.body;
-    if (!discordId || !watiam) {
-        return res.send({ status: 'error', message: 'Invalid request. Missing parameters.' });
-    }
-    const userId = decryptUserId(discordId);
-    if (!userId) {
-        return res.send('Invalid verification link. It may have expired or corrupted. Try getting a new one from the server.');
-    }
-    if (watiam.length > 8 || !watiam.match(/^[a-z]{1,}\d*[a-z]{1,}$/i)) {
-        return res.send({ status: 'error', message: 'Invalid WatIAM ID. Please enter a valid WatIAM ID.' });
-    }
-    const verificationInfo = verificationPool.get(userId);
-    if (!verificationInfo) {
-        return res.send({ status: 'error', message: 'Verification link does not exist or has expired. Try getting a new one from the server.' });
-    }
-    // Check if its before the next retry
-    let nextRetry = verificationInfo.nextRetry;
-    if (nextRetry && Date.now() < nextRetry) {
-        return res.send({ status: 'error', message: `You cannot send email until the next retry. Please wait.` });
-    } else if (nextRetry === -1) {
-        return res.send({ status: 'error', message: `You have reached the maximum number of retries. Please try again later.` });
-    }
-
-    // Generate a random token for verification
-    if (!verificationInfo.token) {
-        verificationInfo.token = generateRandomToken();
-        verificationPool.set(userId, verificationInfo);
-    }
-    
-    // Send email to the user
-    const token = verificationInfo.token;
-    const link = `${env.URL}/email-verify/click/${discordId}/${token}`;
-    const text = `Click the link to verify your email: ${link}. The link will expire in 1 hour. If you did not request this, please DO NOT click the link and ignore this email.`;
-    const html = getTemplate('email', { verificationLink: link }); // TODO: Make the email template beautiful
-    const to = `${watiam}@uwaterloo.ca`;
-
-    console.log('Sending email to:', to);
-    console.log('With verification link:', link);
-
-    try {
-        await sendEmail(to, 'Email Verification', text, html);
-    } catch (error) {
-        console.error('Error sending email:', error);
-        return res.send({ status: 'error', message: 'An error occurred while sending the email. Please try again. If the problem persists, please contact the club executives to get verified manually.' });
-    }
-
-    // Update the verification pool
-    verificationInfo.watiam = watiam;
-    verificationInfo.emailSent = Date.now();
-    verificationInfo.expiry = Date.now() + 60 * 60 * 1000;
-
-    // Calculate the next retry time
-    const retries = verificationInfo.retries ?? 0;
-    nextRetry = verificationInfo.emailSent;
-    if (nextRetry) {
-        if (retries <= 4) {
-            nextRetry += [0.5, 1, 2, 3, 5][retries] * 60 * 1000;
-        } else {
-            nextRetry = -1;
-        }
-        verificationInfo.nextRetry = nextRetry;
-    }
-    verificationInfo.retries = retries + 1;
-    verificationPool.set(userId, verificationInfo);
-
-    // Logging
-    logger.verbose(verificationInfo.interaction.member as GuildMember, 'Sent a verification email', 'They have requested a verification email to verify.', embed => {
-        embed.addFields(
-            { name: 'WatIAM', value: watiam },
-            { name: 'Next Retry', value: nextRetry > 0 ? `<t:${Math.floor(nextRetry / 1000)}:R>` : 'Until the verification link expires' }
-        );
-    });
-
-    // Send a success response
-    res.send({
-        status: 'success',
-        emailSent: verificationInfo.emailSent,
-        nextRetry: nextRetry
-    });
-});
-
-app.get('/email-verify/click/:encryptedUserId/:token', async (req: express.Request, res: express.Response): Promise<any> => {
-    // Redirect in javascript to prevent email client scanning accessing the link
-    res.send(getTemplate('email-click', {redirectUrl: `${env.URL}/email-verify/${req.params.encryptedUserId}/${req.params.token}` }));
-});
-
-app.get('/email-verify/:encryptedUserId/:token', async (req: express.Request, res: express.Response): Promise<any> => {
+app.get('/email-verification/status/:encryptedUserId', (req: express.Request, res: express.Response): any => {
     const encryptedUserId = req.params.encryptedUserId;
-    const token = req.params.token;
     const userId = decryptUserId(encryptedUserId);
     if (!userId) {
-        return res.send(getTemplate('error', { message: 'Invalid verification link. It may have expired or corrupted. Try getting a new one from the server.' }));
+        return res.status(400).send({ status: 'expired', message: 'Invalid verification link.' });
     }
 
     const verificationInfo = verificationPool.get(userId);
     if (!verificationInfo) {
-        return res.send(getTemplate('error', { message: 'Verification link does not exist or has expired. Try getting a new one from the server.' }));
+        return res.status(404).send({ status: 'expired', message: 'This verification request has expired.' });
     }
 
-    if (verificationInfo.token !== token) {
-        return res.send(getTemplate('error', { message: 'Invalid verification token.' }));
-    }
-
-    const guild = await client.guilds.fetch(env.SERVER_ID);
-    const member = await guild.members.fetch(userId);
-    if (!member) {
-        return res.send(getTemplate('error', { message: 'Cannot find the user in the server. Please join the server first.' }));
-    }
-
-    // Remove the user from the verification pool
-    verificationPool.delete(userId);
-
-    // Give the verified role to the user
-    await member.roles.add(env.ROLE_ID.VERIFIED);
-    await member.roles.add(env.ROLE_ID.CURRENT_UW_STUDENT);
-
-    // Send a success message to the user
-    //sendExclusiveMessage('You have been successfully verified! Welcome to osu!uwaterloo!', member);
-    verificationInfo.interaction.followUp({ content: 'You have been successfully verified! Welcome to osu!uwaterloo!', ephemeral: true });
-
-    // Update the sheet
-    try {
-        await sheet.addMember(userId, member.user.username, verificationInfo.watiam!);
-    } catch (error) {
-        console.error('Error adding member to the sheet:', error);
-    }
-
-    // Logging
-    logger.success(member, 'Has been verified', 'They have completed the email verification process and have been verified as a current UW student.', embed => {
-        embed.addFields(
-            { name: 'WatIAM', value: verificationInfo.watiam ?? 'Unknown' }
-        );
+    res.set('Cache-Control', 'no-store');
+    return res.send({
+        status: verificationInfo.status ?? 'pending',
+        message: verificationInfo.statusMessage,
+        receivedAddress: verificationInfo.receivedAddress,
+        membershipLink: verificationInfo.membershipLink,
+        expiresAt: verificationInfo.expiry,
     });
-
-    // Get a membership management link
-    const key = `${userId}-${Date.now() + 24 * 60 * 60 * 1000}`;
-    const link = `${env.URL}/membership/${encryptUserId(key)}?verified=true`;
-    
-    res.redirect(link);
 });
+
+app.post(
+    '/email-verification/inbound',
+    express.raw({ type: ['message/rfc822', 'application/octet-stream'], limit: MAX_INBOUND_EMAIL_SIZE }),
+    async (req: express.Request, res: express.Response): Promise<any> => {
+        if (!bearerSecretMatches(req.get('authorization'))) {
+            return res.status(401).send('Unauthorized');
+        }
+        if ((req.get('x-ouw-envelope-to') ?? '').toLowerCase() !== VERIFICATION_ADDRESS) {
+            return res.status(400).send('Unexpected recipient');
+        }
+        if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+            return res.status(400).send('Missing RFC 822 message');
+        }
+
+        let parsedEmail;
+        try {
+            parsedEmail = await parseVerificationEmail(req.body);
+        } catch (error) {
+            console.error('Could not parse inbound verification email:', error);
+            return res.status(400).send('Could not parse message');
+        }
+
+        if (parsedEmail.tokens.length === 0) {
+            return res.status(202).send('No verification token');
+        }
+
+        const poolEntries = Array.from(verificationPool.entries()).filter(([, info]) =>
+            Boolean(info.token && parsedEmail.tokens.includes(info.token))
+        );
+        if (poolEntries.length > 1) {
+            return res.status(202).send('Ambiguous verification tokens');
+        }
+        const poolEntry = poolEntries[0];
+        if (!poolEntry) {
+            return res.status(202).send('Unknown or expired token');
+        }
+        const [userId, verificationInfo] = poolEntry;
+        if (verificationInfo.expiry < Date.now()) {
+            verificationPool.delete(userId);
+            return res.status(202).send('Expired token');
+        }
+        if (verificationInfo.status === 'verified' || verificationInfo.status === 'processing') {
+            return res.status(202).send('Already handled');
+        }
+
+        let dkimStatus;
+        try {
+            dkimStatus = await verifyWaterlooDkim(req.body);
+        } catch (error) {
+            console.error('Could not authenticate inbound verification email:', error);
+            return res.status(503).send('Could not authenticate message');
+        }
+        if (!dkimStatus.pass) {
+            if (dkimStatus.temporaryError) {
+                return res.status(503).send('Temporary DKIM lookup failure');
+            }
+            return res.status(403).send('A valid UWaterloo DKIM signature is required');
+        }
+
+        if (parsedEmail.sender.kind !== 'watiam') {
+            const receivedAddress = parsedEmail.sender.address || 'an unrecognized address';
+            verificationInfo.status = 'wrong-address';
+            verificationInfo.receivedAddress = receivedAddress;
+            verificationInfo.statusMessage = parsedEmail.sender.kind === 'friendly'
+                ? `Received from ${receivedAddress}. In Outlook, choose the address to the WATIAM one and send again.`
+                : `We received your email from ${receivedAddress}, but it is not a valid WatIAM address.`;
+            verificationPool.set(userId, verificationInfo);
+
+            if (verificationInfo.lastNotifiedAddress !== receivedAddress) {
+                verificationInfo.lastNotifiedAddress = receivedAddress;
+                void notifyVerificationUser(userId, verificationInfo.statusMessage, verificationInfo.interaction);
+            }
+            return res.status(202).send('Waiting for WatIAM sender address');
+        }
+
+        verificationInfo.status = 'processing';
+        verificationInfo.statusMessage = 'Finishing your Discord verification…';
+        verificationInfo.receivedAddress = parsedEmail.sender.address;
+        verificationPool.set(userId, verificationInfo);
+
+        try {
+            await completeEmailVerification(userId, verificationInfo, parsedEmail.sender.watiam);
+            return res.status(200).send('Verified');
+        } catch (error) {
+            console.error('Could not complete inbound email verification:', error);
+            verificationInfo.status = 'pending';
+            verificationInfo.statusMessage = 'We received your email but could not finish verification. We will retry shortly.';
+            verificationPool.set(userId, verificationInfo);
+            return res.status(503).send('Could not complete verification');
+        }
+    }
+);
 
 // restore verification status for rejoining members
 async function restoreVerificationStatus(member: GuildMember) {
@@ -383,7 +466,7 @@ async function onVerifyRequest(interaction: ButtonInteraction) {
     const embed = new EmbedBuilder()
         .setColor('#5865f2')
         .setTitle('Verification Link')
-        .setDescription('Click the button below and login with your UWaterloo account to verify');
+        .setDescription('Click the button below, then send the prepared email from your WatIAM address to verify');
     
     if (isVerified) {
         embed.addFields({ name: 'Note', value: 'You are already verified, but not as a current UW student. If you are an UW student now, complete the verification process will grant you the current UW student role.' });

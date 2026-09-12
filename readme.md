@@ -10,7 +10,7 @@ o!uw bot is a Discord bot for osu!uwaterloo that provides various features to im
 ### Verification
 
 - Provides an interface for new members to verify themselves
-- Allow UW students to verify themselves with their watiam and email
+- Allows UW students to verify by sending an authenticated email from their WatIAM address
 - Has a voucher system for non-UW students to automatically verify the invited user
 - Supports integration with osu! API for osu! account linking
 - Allows users to add their social media links to their profile
@@ -101,8 +101,8 @@ Here is a template for the `env.json` file:
 		// A list of user IDs that are admins of the bot
 	],
 	"URL": "http://localhost:3000", // The URL of the bot, where the verification website hosts, without slash at the end
-	"SMTP_EMAIL": "osu@clubs.wusa.ca", // The email address of the SMTP server, which sends verification emails
-	"SMTP_PASSWORD": "meowmeowmeownyanyanyawysi", // The password of the SMTP server
+	"EMAIL_VERIFICATION_ADDRESS": "verify@ouw.s23.moe", // Address routed to the Cloudflare Email Worker
+	"EMAIL_VERIFICATION_WEBHOOK_SECRET": "generate-a-long-random-secret", // Must match the Worker's WEBHOOK_SECRET
 	"AES_ENCRYPTION_SECRET": "MEOWMEOWMEOW", // The secret for AES encryption, for the verification url state. Generate a random string for this
 	"GOOGLE_CLIENT_EMAIL": "ouw-bot@osu-uwaterloo.iam.gserviceaccount.com", // The service account email for Google Sheets API
 	"GOOGLE_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----MEOW-----END PRIVATE KEY-----\n", // The private key for Google Sheets API
@@ -123,6 +123,17 @@ npm start
 ```
 
 You can also use PM2 to manage the node process (although it is already very stable).
+
+### Inbound verification email
+
+The bot does not send verification email. A student opens a prepared Outlook
+message, selects their WatIAM address in the From menu, and sends it to
+`verify@ouw.s23.moe`. The bot verifies Waterloo's DKIM signature before using
+the sender's local part as the WatIAM.
+
+Deploy the Worker in [`cloudflare-email-worker`](./cloudflare-email-worker/README.md),
+then route the `verify` custom address to it in Cloudflare Email Routing. The
+Worker and bot must share the same long random webhook secret.
 
 ## License
 
