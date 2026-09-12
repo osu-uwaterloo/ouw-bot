@@ -33,20 +33,26 @@
                 </div>
             </div>
             <div class="card-actions verification-actions">
-                <a class="button secondary" href="{{ mailtoUrl }}">Use another app</a>
-                <a class="button primary-action" href="{{ outlookComposeUrl }}" target="_blank" rel="noopener">Open Outlook</a>
+                <a class="button secondary mail-app-action" href="{{ mailtoUrl }}">
+                    <span class="desktop-action-label">Use another app</span>
+                    <span class="mobile-action-label">Open email app</span>
+                </a>
+                <a class="button primary-action outlook-web-action" href="{{ outlookComposeUrl }}" target="_blank" rel="noopener">Open Outlook</a>
             </div>
         </div>
 
         <div id="success-card" class="card center verification-card hide">
-            <div class="card-title">Verification complete</div>
-            <div class="card-body">
+            <div class="card-title">Email verified!</div>
+            <div class="card-body verification-success-body">
                 <svg class="big-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" aria-hidden="true"><path d="M256 48a208 208 0 1 0 0 416 208 208 0 1 0 0-416zm92.5 148.5-112 128a24 24 0 0 1-35.4.8l-64-64a24 24 0 1 1 33.9-33.9l45.9 45.9 95.5-109.1a24 24 0 0 1 36.1 31.6z"/></svg>
                 <p id="success-message">Your UWaterloo email has been verified and your Discord roles have been added.</p>
-                <p class="note">You will also receive a confirmation in Discord.</p>
+                <div class="verification-next-step">
+                    <strong>Membership settings</strong>
+                    <span>You can link your osu! account and update your member profile now or later.</span>
+                </div>
             </div>
-            <div class="card-actions">
-                <a id="membership-link" class="button" href="#">Continue</a>
+            <div class="card-actions success-actions">
+                <a id="membership-link" class="button" href="#">Manage Membership</a>
             </div>
         </div>
     </div>

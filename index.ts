@@ -162,7 +162,7 @@ async function completeEmailVerification(userId: string, verificationInfo: Verif
 
     await notifyVerificationUser(
         userId,
-        `You have been successfully verified as ${watiam}@uwaterloo.ca. Welcome to osu!uwaterloo!`,
+        `You have been successfully verified as \`${watiam}\`. Welcome to osu!uwaterloo!`,
         verificationInfo.interaction,
     );
 }
@@ -405,7 +405,12 @@ async function setupVerificationButtonMessage(message: Message) {
         .setLabel('Request Verification Link')
         .setStyle(ButtonStyle.Primary);
 
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(verifyButton);
+    const manageMembershipButton = new ButtonBuilder()
+        .setCustomId('manage_membership_request')
+        .setLabel('Manage Membership')
+        .setStyle(ButtonStyle.Secondary);
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(verifyButton, manageMembershipButton);
 
     return await (message.channel as TextChannel).send({
         embeds: [embed],
@@ -547,7 +552,7 @@ async function addMissingFieldsToLegacyRow(member: GuildMember, row: GoogleSprea
 }
 
 // Manage membership slash command callback
-const onSlashCommandManageMembership = async (interaction: ChatInputCommandInteraction) => {
+const onManageMembership = async (interaction: ChatInputCommandInteraction | ButtonInteraction) => {
     // Check if the user has the verified role
     const roles = (interaction.member!.roles as GuildMemberRoleManager).cache;
     const isVerified = roles.has(env.ROLE_ID.VERIFIED);
@@ -1633,7 +1638,7 @@ client.on('interactionCreate', async (interaction) => {
     const { commandName } = interaction;
 
     if (commandName === 'manage_membership') {
-        await onSlashCommandManageMembership(interaction as ChatInputCommandInteraction);
+        await onManageMembership(interaction as ChatInputCommandInteraction);
     } else if (commandName === 'name_colour') {
         const subcommand = (interaction as ChatInputCommandInteraction).options.getSubcommand();
         if (subcommand === 'set') {
@@ -1746,6 +1751,8 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 
     if (action === 'verify_request') {
         await onVerifyRequest(interaction as ButtonInteraction);
+    } else if (action === 'manage_membership_request') {
+        await onManageMembership(interaction as ButtonInteraction);
     } else if (action.startsWith('react_tick_to_message_')) {
         await reactTickToMessage(interaction as ButtonInteraction);
     } else if (action.startsWith('verify_invention_request_from_')) {

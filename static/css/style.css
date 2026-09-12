@@ -299,6 +299,46 @@ body {
 	padding-inline: 1.35em;
 }
 
+.mobile-action-label {
+	display: none;
+}
+
+.verification-success-body {
+	text-align: center;
+}
+
+.verification-success-body .big-icon {
+	margin-top: 0.75em;
+}
+
+.verification-next-step {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35em;
+	margin-top: 1.25em;
+	padding: 1em;
+	background: #f1c81414;
+	border: 1px solid #e8ca2155;
+	border-radius: 4px;
+	text-align: left;
+}
+
+.verification-next-step strong {
+	color: var(--yellow-1);
+}
+
+.verification-next-step span {
+	font-size: 0.85em;
+	color: var(--gray-1);
+}
+
+.success-actions .button {
+	width: 100%;
+	padding: 0.7em 1em;
+	text-align: center;
+	font-size: 1.05em;
+}
+
 @keyframes status-slide {
 	0% { transform: translateX(-110%); }
 	100% { transform: translateX(300%); }
@@ -321,11 +361,27 @@ body {
 	}
 
 	.verification-actions {
-		flex-direction: column-reverse;
+		display: block;
 	}
 
 	.verification-actions .button {
+		display: block;
+		width: 100%;
 		text-align: center;
+	}
+
+	.verification-actions .outlook-web-action,
+	.desktop-action-label {
+		display: none;
+	}
+
+	.mobile-action-label {
+		display: inline;
+	}
+
+	.verification-actions .mail-app-action {
+		background: var(--accent-colour);
+		color: var(--dark-text);
 	}
 }
 
