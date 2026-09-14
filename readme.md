@@ -95,6 +95,13 @@ Here is a template for the `env.json` file:
 		*/
 	},
 	"EXEC_ROLE_ID": "727727727727727", // Role ID of executives
+	"EXECUTIVE_TITLE_ROLES": [ // Ordered executive titles used on the website
+		{ "title": "President", "roleId": "579403603572293642" },
+		{ "title": "Vice President", "roleId": "530847746052063238" },
+		{ "title": "Tournament Host", "roleId": "530847618675376138" },
+		{ "title": "Contest Host", "roleId": "530848225301626883" },
+		{ "title": "Treasurer", "roleId": "530848184839438357" }
+	],
 	"ALUMNI_ROLE_ID": "727727727727727", // Role ID of alumni; controls the Alumni section on the website
 	"VERIFY_CHANNEL_ID": "727727727727727", // Channel ID of the manual verification channel )where the voucher system runs)
 	"LOGGING_CHANNEL_ID": "727727727727727", // Channel ID of the logging channel to log the bot events

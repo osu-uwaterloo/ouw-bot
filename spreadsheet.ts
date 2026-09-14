@@ -20,7 +20,31 @@ console.log("Loading Google Sheet integration...");
 
 const doc = new GoogleSpreadsheet(env.GOOGLE_SHEET_ID, jwt);
 
-await doc.loadInfo();
+function googleStatus(error: unknown): number | null {
+    if (!error || typeof error !== 'object') return null;
+    const candidate = error as { code?: unknown; status?: unknown; response?: { status?: unknown } };
+    const status = Number(candidate.response?.status ?? candidate.status ?? candidate.code);
+    return Number.isInteger(status) ? status : null;
+}
+
+async function loadSheetInfo(): Promise<void> {
+    const retryDelaysMs = [5_000, 10_000, 20_000];
+    for (let attempt = 0; ; attempt += 1) {
+        try {
+            await doc.loadInfo();
+            return;
+        } catch (error) {
+            const status = googleStatus(error);
+            const retryable = status === 429 || (status !== null && status >= 500);
+            const delayMs = retryDelaysMs[attempt];
+            if (!retryable || delayMs === undefined) throw error;
+            console.warn(`Google Sheet initialization returned ${status}; retrying in ${delayMs / 1_000}s.`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+    }
+}
+
+await loadSheetInfo();
 
 console.log(`Google Sheet integration loaded, sheet name: ${doc.title}`);
 

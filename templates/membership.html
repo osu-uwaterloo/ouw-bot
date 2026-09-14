@@ -319,6 +319,58 @@
 				}
 			</script>
 		</div>
+		<div id="profile-program" class="card">
+			<div class="card-title">Program / Graduation Year</div>
+			<div class="card-body">
+				<p>Add your program, or your program and expected graduation year, to the club website.</p>
+				<p class="note {{ optionalDisplayNoteClass }}">This section will only take effect if you have chosen to display your profile on the club website in the previous section. Leave it empty if you do not want it displayed.</p>
+				<p class="note {{ executiveDisplayNoteClass }}">Your executive profile is always listed. Leave this empty if you do not want it displayed.</p>
+				<input class="textfield big" id="member-program" maxlength="100" placeholder="For example: Honours Math 2028">
+			</div>
+			<div class="card-actions bio-actions">
+				<span class="bio-character-count" id="program-character-count">0 / 100</span>
+				<button class="button" disabled id="update-program" onclick="submitProgram()">Save Program</button>
+			</div>
+			<script>
+				let savedProgram = {{ program }};
+				let programNew = savedProgram;
+				const programInput = document.querySelector('#member-program');
+				const programButton = document.querySelector('#update-program');
+				const programCount = document.querySelector('#program-character-count');
+				programInput.value = savedProgram;
+				const updateProgramEditor = () => {
+					programNew = programInput.value.trim();
+					programCount.textContent = `${programInput.value.length} / 100`;
+					programButton.disabled = programNew === savedProgram;
+				};
+				programInput.addEventListener('input', updateProgramEditor);
+				updateProgramEditor();
+
+				async function submitProgram() {
+					programButton.disabled = true;
+					programButton.classList.add('loading');
+					programInput.disabled = true;
+					try {
+						const response = await fetch('{{ membershipManagementBaseUrl }}/update-program', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({ token, program: programNew }),
+						});
+						const json = await response.json();
+						if (!response.ok || json.status !== 'success') throw new Error(json.message || 'Could not save the program.');
+						savedProgram = programNew;
+						programInput.value = savedProgram;
+					} catch (error) {
+						console.error(error);
+						alert(error.message || 'An error occurred. Please try again later.');
+					} finally {
+						programInput.disabled = false;
+						programButton.classList.remove('loading');
+						updateProgramEditor();
+					}
+				}
+			</script>
+		</div>
 		<div id="profile-bio" class="card">
 			<div class="card-title">Bio</div>
 			<div class="card-body">

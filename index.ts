@@ -77,13 +77,36 @@ const verificationPool = new Map<string, VerificationInfo>();
 const VERIFICATION_ADDRESS = (env.EMAIL_VERIFICATION_ADDRESS ?? 'verify@ouw.s23.moe').toLowerCase();
 const VERIFICATION_CHALLENGE_TTL = 10 * 60 * 1000;
 const MAX_INBOUND_EMAIL_SIZE = 256 * 1024;
-const EXECUTIVE_TITLE_ROLES = [
-    { title: 'President', roleId: '579403603572293642' },
-    { title: 'Vice President', roleId: '530847746052063238' },
-    { title: 'Tournament Host', roleId: '530847618675376138' },
-    { title: 'Contest Host', roleId: '530848225301626883' },
-    { title: 'Treasurer', roleId: '530848184839438357' },
-] as const;
+type ExecutiveTitleRole = { title: string; roleId: string };
+
+function parseExecutiveTitleRoles(value: unknown): ReadonlyArray<ExecutiveTitleRole> {
+    if (value === undefined || value === null) {
+        console.warn('EXECUTIVE_TITLE_ROLES is not configured; executive profiles will use the generic Executive title.');
+        return [];
+    }
+    if (!Array.isArray(value)) throw new Error('EXECUTIVE_TITLE_ROLES must be an array.');
+
+    const roles = value.map((entry, index) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+            throw new Error(`EXECUTIVE_TITLE_ROLES[${index}] must be an object.`);
+        }
+        const title = String((entry as Record<string, unknown>).title ?? '').trim();
+        const roleId = String((entry as Record<string, unknown>).roleId ?? '').trim();
+        if (!title || title.length > 100) {
+            throw new Error(`EXECUTIVE_TITLE_ROLES[${index}].title must be 1–100 characters.`);
+        }
+        if (!/^\d{17,20}$/.test(roleId)) {
+            throw new Error(`EXECUTIVE_TITLE_ROLES[${index}].roleId must be a Discord role ID.`);
+        }
+        return { title, roleId };
+    });
+    if (new Set(roles.map(role => role.roleId)).size !== roles.length) {
+        throw new Error('EXECUTIVE_TITLE_ROLES cannot contain duplicate role IDs.');
+    }
+    return roles;
+}
+
+const EXECUTIVE_TITLE_ROLES = parseExecutiveTitleRoles(env.EXECUTIVE_TITLE_ROLES);
 
 let publicMembersSyncTimer: NodeJS.Timeout | null = null;
 let publicMembersSyncRunning = false;
@@ -1027,6 +1050,7 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, re
         optionalDisplayNoteClass: isExecutive ? 'hide' : '',
         osuUsername: JSON.stringify(osuUsername).replace(/</g, '\\u003c'),
         name: JSON.stringify((socialLinksInSheetJson.name ?? '').toString()).replace(/</g, '\\u003c'),
+        program: JSON.stringify((socialLinksInSheetJson.program ?? '').toString()).replace(/</g, '\\u003c'),
         bio: JSON.stringify((socialLinksInSheetJson.bio ?? '').toString()).replace(/</g, '\\u003c'),
         canRefreshDiscordUsername: (!adminActorId || Boolean(client.guilds.cache.get(env.SERVER_ID)?.members.cache.has(userId))).toString(),
         socialMedia: JSON.stringify(socialLinks)
@@ -1358,6 +1382,37 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-name', async (req: expres
     res.send({ status: 'success' });
 });
 
+// Update the program or program and graduation year shown on the public profile
+app.post('/membership/:encryptedUserIdAndExpiry/update-program', async (req: express.Request, res: express.Response): Promise<any> => {
+    const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
+
+    const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
+    if (!reqData) return;
+    const { row } = reqData;
+
+    if (typeof req.body.program !== 'string') {
+        return res.status(400).send({ status: 'error', message: 'Program must be text.' });
+    }
+    const program = req.body.program.trim();
+    if (program.length > 100) {
+        return res.status(400).send({ status: 'error', message: 'Program must be 100 characters or fewer.' });
+    }
+
+    let socialLinks: Record<string, string> = {};
+    try {
+        const parsed = JSON.parse(row.get('social_links') || '{}');
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) socialLinks = parsed;
+    } catch {}
+    if (program) {
+        socialLinks.program = program;
+    } else {
+        delete socialLinks.program;
+    }
+    await sheet.updateRow(row, { social_links: JSON.stringify(socialLinks) });
+    schedulePublicMembersSync('program updated');
+    res.send({ status: 'success' });
+});
+
 // Update public profile bio
 app.post('/membership/:encryptedUserIdAndExpiry/update-bio', async (req: express.Request, res: express.Response): Promise<any> => {
     const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
@@ -1403,18 +1458,22 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-social-links', async (req
         return res.status(400).send({ status: 'error', message: 'Social links must be an object.' });
     }
 
+    let existingSocialLinks: Record<string, unknown> = {};
     try {
-        const existingSocialLinks = JSON.parse(row.get('social_links') || '{}');
-        if (typeof existingSocialLinks.bio === 'string') socialLinks.bio = existingSocialLinks.bio;
-        if (typeof existingSocialLinks.name === 'string') socialLinks.name = existingSocialLinks.name;
+        const parsed = JSON.parse(row.get('social_links') || '{}');
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) existingSocialLinks = parsed;
     } catch {}
+    for (const key of ['bio', 'name', 'program']) {
+        if (typeof existingSocialLinks[key] === 'string') socialLinks[key] = existingSocialLinks[key];
+        else delete socialLinks[key];
+    }
 
     
     const discordUsernameInSheet = row.get('discord_username') ?? '';
 
     // Validate
     for (const key in socialLinks) {
-        if (key === 'bio' || key === 'name') continue;
+        if (key === 'bio' || key === 'name' || key === 'program') continue;
         const field = socialMediaFields.find(field => field.id === key);
         const value = socialLinks[key];
         if (!field) {
@@ -2623,6 +2682,28 @@ client.on('messageCreate', async (message) => {
         message.reply(`Reacted ${targetMessage.url}`);
     }
 });
+
+// Express 5 forwards rejected async route handlers here instead of terminating the process.
+const asyncRouteErrorHandler: express.ErrorRequestHandler = (error: unknown, req, res, next) => {
+    if (res.headersSent) {
+        next(error);
+        return;
+    }
+    const candidate = error && typeof error === 'object'
+        ? error as { code?: unknown; status?: unknown; response?: { status?: unknown } }
+        : null;
+    const upstreamStatus = Number(candidate?.response?.status ?? candidate?.status ?? candidate?.code);
+    const isQuotaError = upstreamStatus === 429;
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`${req.method} ${req.path} failed${Number.isInteger(upstreamStatus) ? ` (${upstreamStatus})` : ''}: ${message}`);
+    res.status(isQuotaError ? 503 : 500).send({
+        status: 'error',
+        message: isQuotaError
+            ? 'The membership database is temporarily busy. Please wait a moment and try again.'
+            : 'An unexpected server error occurred. Please try again later.',
+    });
+};
+app.use(asyncRouteErrorHandler);
 
 // Start the server
 app.listen(PORT, () => {
