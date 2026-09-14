@@ -178,24 +178,24 @@
 		</div>
 		<div id="website-profile" class="card">
 			<div class="card-title">Website Profile</div>
+			<div class="website-profile-actions">
+				<button class="button" disabled id="update-website-profile" onclick="submitWebsiteProfile()">Update</button>
+			</div>
 			<div id="display-on-website" class="profile-section">
-			<div class="profile-section-title">Visibility and Primary Name</div>
 			<div class="card-body">
-				<p class="linked-website">You can choose whether to display your profile on the club website's <a href="https://osu.uwaterloo.ca/members" target="_blank">member</a> page.</p>
 				<div class="switch">
 					<input type="checkbox" id="display-on-website-switch">
 					<label for="display-on-website-switch"></label>
-					<label for="display-on-website-switch">Display my profile on club website</label>
+					<label for="display-on-website-switch">Display on club website</label>
 				</div>
 				<p class="note {{ executiveDisplayNoteClass }}">Executive profiles are always listed on the club website. This switch saves your preference for when you no longer have an executive role. You can still leave any optional field empty if you do not want it displayed.</p>
-				<p class="note {{ optionalDisplayNoteClass }}">Additional profile fields are optional. Leave any field empty if you do not want it displayed.</p>
 				<label class="profile-field">
 					<span class="profile-field-label">Primary name</span>
 					<span class="profile-input-row">
 						<input class="textfield big" id="website-osu-username" readonly aria-readonly="true">
 						<span class="inline-icon-button-wrapper" title="Refresh osu! username"><button class="button inline-icon-button" id="refresh-osu-username" onclick="refreshOsuUsername()" type="button" aria-label="Refresh osu! username">↻</button></span>
 					</span>
-					<span class="profile-field-help">This comes from your linked osu! account.</span>
+					<span class="profile-field-help">Synced from your linked osu! account.</span>
 				</label>
 			</div>
 			<script>
@@ -293,16 +293,12 @@
 			</script>
 		</div>
 			<div id="profile-name" class="profile-section">
-			<div class="profile-section-title">Additional Name</div>
 			<div class="card-body">
-				<p>Your osu! username is your primary name on the member page. You can add an additional name to show beside it in parentheses.</p>
 				<label class="profile-field">
-					<span class="profile-field-label">Additional name</span>
+					<span class="profile-field-heading"><span class="profile-field-label">Additional name</span><span class="bio-character-count" id="name-character-count">0 / 20</span></span>
 					<input class="textfield big" id="member-name" maxlength="20" placeholder="Additional name (optional)">
+					<span class="profile-field-help">Shown in parentheses after your primary name.</span>
 				</label>
-			</div>
-			<div class="profile-character-row">
-				<span class="bio-character-count" id="name-character-count">0 / 20</span>
 			</div>
 			<script>
 				let savedName = {{ name }};
@@ -321,16 +317,11 @@
 			</script>
 		</div>
 			<div id="profile-program" class="profile-section">
-			<div class="profile-section-title">Program / Graduation Year</div>
 			<div class="card-body">
-				<p>Add your program and/or expected graduation year to the club website.</p>
 				<label class="profile-field">
-					<span class="profile-field-label">Program and/or graduation year</span>
+					<span class="profile-field-heading"><span class="profile-field-label">Program and/or graduation year</span><span class="bio-character-count" id="program-character-count">0 / 100</span></span>
 					<input class="textfield big" id="member-program" maxlength="100" placeholder="For example: Honours Math 2028">
 				</label>
-			</div>
-			<div class="profile-character-row">
-				<span class="bio-character-count" id="program-character-count">0 / 100</span>
 			</div>
 			<script>
 				let savedProgram = {{ program }};
@@ -349,16 +340,11 @@
 			</script>
 		</div>
 			<div id="profile-bio" class="profile-section">
-			<div class="profile-section-title">Bio</div>
 			<div class="card-body">
-				<p>Add a short bio to display on the club website.</p>
 				<label class="profile-field">
-					<span class="profile-field-label">Bio</span>
+					<span class="profile-field-heading"><span class="profile-field-label">Bio</span><span class="bio-character-count" id="bio-character-count">0 / 200</span></span>
 					<textarea class="textfield bio-textarea" id="member-bio" maxlength="200" rows="5" placeholder="What do you play, map, stream, or study?"></textarea>
 				</label>
-			</div>
-			<div class="profile-character-row">
-				<span class="bio-character-count" id="bio-character-count">0 / 200</span>
 			</div>
 			<script>
 				let savedBio = {{ bio }};
@@ -376,9 +362,6 @@
 				updateBioEditor();
 			</script>
 		</div>
-			<div class="card-actions">
-				<button class="button" disabled id="update-website-profile" onclick="submitWebsiteProfile()">Save Profile</button>
-			</div>
 		</div>
 		<div id="social-links" class="card">
 			<div class="card-title">Social Links</div>
