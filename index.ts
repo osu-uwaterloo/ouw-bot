@@ -668,18 +668,24 @@ async function addMissingFieldsToLegacyRow(member: GuildMember, row: GoogleSprea
 type AdminMembershipSession = {
     actorId: string;
     targetId: string | null;
+    targetRowNumber: number | null;
     expiresAt: number;
 };
 
 const adminMembershipSessions = new Map<string, AdminMembershipSession>();
 const ADMIN_MEMBERSHIP_SESSION_TTL = 12 * 60 * 60 * 1000;
 
-function createAdminMembershipSession(actorId: string, targetId: string | null, expiresAt = Date.now() + ADMIN_MEMBERSHIP_SESSION_TTL) {
+function createAdminMembershipSession(
+    actorId: string,
+    targetId: string | null,
+    expiresAt = Date.now() + ADMIN_MEMBERSHIP_SESSION_TTL,
+    targetRowNumber: number | null = null,
+) {
     for (const [existingToken, session] of adminMembershipSessions) {
         if (session.expiresAt <= Date.now()) adminMembershipSessions.delete(existingToken);
     }
     const token = generateRandomToken(32);
-    adminMembershipSessions.set(token, { actorId, targetId, expiresAt });
+    adminMembershipSessions.set(token, { actorId, targetId, targetRowNumber, expiresAt });
     return token;
 }
 
@@ -792,7 +798,10 @@ const getDataByEncryptedUserIdAndExpiry = async (encryptedUserIdAndExpiry: strin
             res.status(400).send(getTemplate('error', { message: 'No member was selected for this admin link.' }));
             return null;
         }
-        const row = await sheet.findRowByKeyValue('discord_id', validated.session.targetId);
+        const rows = await sheet.getAllRows();
+        const row = validated.session.targetRowNumber
+            ? rows.find(candidate => candidate.rowNumber === validated.session.targetRowNumber)
+            : rows.find(candidate => String(candidate.get('discord_id') ?? '').trim() === validated.session.targetId);
         if (!row) {
             res.status(404).send(getTemplate('error', { message: 'The selected user does not have a membership record.' }));
             return null;
@@ -862,7 +871,7 @@ app.get('/membership-admin/:adminToken', async (req: express.Request, res: expre
             else if (guildMember?.roles.cache.has(env.ROLE_ID.VERIFIED)) category = 'Verified';
 
             const editToken = discordId
-                ? createAdminMembershipSession(validated.session.actorId, discordId, validated.session.expiresAt)
+                ? createAdminMembershipSession(validated.session.actorId, discordId, validated.session.expiresAt, row.rowNumber)
                 : null;
             return {
                 id: discordId || `legacy-${index}`,
