@@ -81,6 +81,8 @@ const MAX_INBOUND_EMAIL_SIZE = 256 * 1024;
 let publicMembersSyncTimer: NodeJS.Timeout | null = null;
 let publicMembersSyncRunning = false;
 let publicMembersSyncRequested = false;
+let publicMembersSyncCompletion: Promise<void> | null = null;
+let resolvePublicMembersSyncCompletion: (() => void) | null = null;
 let publicMembersSyncDisabledWarningShown = false;
 
 async function syncPublicMembersNow(reason: string): Promise<void> {
@@ -96,10 +98,14 @@ async function syncPublicMembersNow(reason: string): Promise<void> {
 
     if (publicMembersSyncRunning) {
         publicMembersSyncRequested = true;
+        if (publicMembersSyncCompletion) await publicMembersSyncCompletion;
         return;
     }
 
     publicMembersSyncRunning = true;
+    publicMembersSyncCompletion = new Promise(resolve => {
+        resolvePublicMembersSyncCompletion = resolve;
+    });
     try {
         do {
             publicMembersSyncRequested = false;
@@ -138,6 +144,9 @@ async function syncPublicMembersNow(reason: string): Promise<void> {
         console.error(`Could not sync the public member list (${reason}):`, error);
     } finally {
         publicMembersSyncRunning = false;
+        resolvePublicMembersSyncCompletion?.();
+        resolvePublicMembersSyncCompletion = null;
+        publicMembersSyncCompletion = null;
     }
 }
 
@@ -1294,7 +1303,7 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-display-on-website', asyn
     await sheet.updateRow(row, {
         display_on_website: displayOnWebsite.toString()
     });
-    schedulePublicMembersSync('website visibility updated');
+    await syncPublicMembersNow('website visibility updated');
 
     // Return success
     res.send({ status: 'success' });
