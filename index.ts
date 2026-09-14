@@ -627,7 +627,7 @@ type AdminMembershipSession = {
 };
 
 const adminMembershipSessions = new Map<string, AdminMembershipSession>();
-const ADMIN_MEMBERSHIP_SESSION_TTL = 30 * 60 * 1000;
+const ADMIN_MEMBERSHIP_SESSION_TTL = 12 * 60 * 60 * 1000;
 
 function createAdminMembershipSession(actorId: string, targetId: string | null, expiresAt = Date.now() + ADMIN_MEMBERSHIP_SESSION_TTL) {
     for (const [existingToken, session] of adminMembershipSessions) {
@@ -726,7 +726,7 @@ const onManageMembership = async (interaction: ChatInputCommandInteraction | But
         .setDescription([
             'Choose an option below.',
             selfServiceExpiry ? `Your personal membership link expires <t:${Math.floor(selfServiceExpiry / 1000)}:R>.` : '',
-            isAdmin ? 'Administrator access expires after 30 minutes.' : '',
+            isAdmin ? 'Administrator access expires after 12 hours.' : '',
         ].filter(Boolean).join('\n'));
     const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons);
     await interaction.reply({
@@ -2096,7 +2096,7 @@ client.on('interactionCreate', async (interaction) => {
         const embed = new EmbedBuilder()
             .setColor('#e8ca21')
             .setTitle('Manage Membership')
-            .setDescription(`Open the membership admin page with **${targetGuildMember.user.username}** selected. Administrator access expires after 30 minutes.`)
+            .setDescription(`Open the membership admin page with **${targetGuildMember.user.username}** selected. Administrator access expires after 12 hours.`)
             .setThumbnail(targetGuildMember.user.displayAvatarURL())
             .setFooter({ text: `Discord ID: ${targetGuildMember.id}` });
         const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
