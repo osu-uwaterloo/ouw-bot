@@ -1350,8 +1350,8 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-profile', async (req: exp
     const name = req.body.name.trim();
     const program = req.body.program.trim();
     const bio = req.body.bio.trim();
-    if (name.length > 20) {
-        return res.status(400).send({ status: 'error', message: 'Name must be 20 characters or fewer.' });
+    if (name.length > 30) {
+        return res.status(400).send({ status: 'error', message: 'Name must be 30 characters or fewer.' });
     }
     if (program.length > 100) {
         return res.status(400).send({ status: 'error', message: 'Program must be 100 characters or fewer.' });
@@ -1408,8 +1408,8 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-name', async (req: expres
         return res.status(400).send({ status: 'error', message: 'Name must be text.' });
     }
     const name = req.body.name.trim();
-    if (name.length > 20) {
-        return res.status(400).send({ status: 'error', message: 'Name must be 20 characters or fewer.' });
+    if (name.length > 30) {
+        return res.status(400).send({ status: 'error', message: 'Name must be 30 characters or fewer.' });
     }
 
     let socialLinks: Record<string, string> = {};

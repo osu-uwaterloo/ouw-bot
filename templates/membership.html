@@ -178,9 +178,6 @@
 		</div>
 		<div id="website-profile" class="card">
 			<div class="card-title">Website Profile</div>
-			<div class="website-profile-actions">
-				<button class="button" disabled id="update-website-profile" onclick="submitWebsiteProfile()">Update</button>
-			</div>
 			<div id="display-on-website" class="profile-section">
 			<div class="card-body">
 				<div class="switch">
@@ -190,12 +187,12 @@
 				</div>
 				<p class="note {{ executiveDisplayNoteClass }}">Executive profiles are always listed on the club website. This switch saves your preference for when you no longer have an executive role. You can still leave any optional field empty if you do not want it displayed.</p>
 				<label class="profile-field">
-					<span class="profile-field-label">Primary name</span>
+					<span class="profile-field-label">Name</span>
 					<span class="profile-input-row">
 						<input class="textfield big" id="website-osu-username" readonly aria-readonly="true">
 						<span class="inline-icon-button-wrapper" title="Refresh osu! username"><button class="button inline-icon-button" id="refresh-osu-username" onclick="refreshOsuUsername()" type="button" aria-label="Refresh osu! username">↻</button></span>
 					</span>
-					<span class="profile-field-help">Synced from your linked osu! account.</span>
+					<span class="profile-field-help" id="website-name-help"></span>
 				</label>
 			</div>
 			<script>
@@ -205,6 +202,9 @@
 					document.querySelector('#website-osu-username').value = osuAccount
 						? websiteOsuUsername || 'Unavailable'
 						: 'No osu! account linked';
+					document.querySelector('#website-name-help').textContent = osuAccount
+						? 'Synced from your linked osu! account.'
+						: 'Link an osu! account above to set your name.';
 					refreshOsuUsernameButton.disabled = !osuAccount;
 				};
 				updateWebsiteOsuUsernameDisplay();
@@ -295,9 +295,9 @@
 			<div id="profile-name" class="profile-section">
 			<div class="card-body">
 				<label class="profile-field">
-					<span class="profile-field-heading"><span class="profile-field-label">Additional name</span><span class="bio-character-count" id="name-character-count">0 / 20</span></span>
-					<input class="textfield big" id="member-name" maxlength="20" placeholder="Additional name (optional)">
-					<span class="profile-field-help">Shown in parentheses after your primary name.</span>
+					<span class="profile-field-heading"><span class="profile-field-label">Additional name (optional)</span><span class="bio-character-count" id="name-character-count">0 / 30</span></span>
+					<input class="textfield big" id="member-name" maxlength="30" placeholder="Nickname or real name">
+					<span class="profile-field-help">Shown in parentheses after your name.</span>
 				</label>
 			</div>
 			<script>
@@ -309,7 +309,7 @@
 				nameInput.dataset.saved = savedName;
 				const updateNameEditor = () => {
 					nameNew = nameInput.value.trim();
-					nameCount.textContent = `${nameInput.value.length} / 20`;
+					nameCount.textContent = `${nameInput.value.length} / 30`;
 					updateWebsiteProfileButton();
 				};
 				nameInput.addEventListener('input', updateNameEditor);
@@ -319,7 +319,7 @@
 			<div id="profile-program" class="profile-section">
 			<div class="card-body">
 				<label class="profile-field">
-					<span class="profile-field-heading"><span class="profile-field-label">Program and/or graduation year</span><span class="bio-character-count" id="program-character-count">0 / 100</span></span>
+					<span class="profile-field-heading"><span class="profile-field-label">Program and/or graduation year (optional)</span><span class="bio-character-count" id="program-character-count">0 / 100</span></span>
 					<input class="textfield big" id="member-program" maxlength="100" placeholder="For example: Honours Math 2028">
 				</label>
 			</div>
@@ -342,7 +342,7 @@
 			<div id="profile-bio" class="profile-section">
 			<div class="card-body">
 				<label class="profile-field">
-					<span class="profile-field-heading"><span class="profile-field-label">Bio</span><span class="bio-character-count" id="bio-character-count">0 / 200</span></span>
+					<span class="profile-field-heading"><span class="profile-field-label">Bio (optional)</span><span class="bio-character-count" id="bio-character-count">0 / 200</span></span>
 					<textarea class="textfield bio-textarea" id="member-bio" maxlength="200" rows="5" placeholder="What do you play, map, stream, or study?"></textarea>
 				</label>
 			</div>
@@ -362,6 +362,9 @@
 				updateBioEditor();
 			</script>
 		</div>
+			<div class="card-actions website-profile-actions">
+				<button class="button" disabled id="update-website-profile" onclick="submitWebsiteProfile()">Update</button>
+			</div>
 		</div>
 		<div id="social-links" class="card">
 			<div class="card-title">Social Links</div>

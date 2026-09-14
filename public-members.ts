@@ -132,7 +132,7 @@ export function buildPublicMemberSnapshot(
             twitch: text(socialLinks.twitch) || null,
             youtube: text(socialLinks.youtube) || null,
             github: text(socialLinks.github) || null,
-            name: text(socialLinks.name).slice(0, 20) || null,
+            name: text(socialLinks.name).slice(0, 30) || null,
             program: text(socialLinks.program).slice(0, 100) || null,
             bio: text(socialLinks.bio).slice(0, 200) || null,
             role: category === 'executive' ? getExecutiveTitle(discordMember.roleIds, config) : null,
