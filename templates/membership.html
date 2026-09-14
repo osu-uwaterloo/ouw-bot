@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>osu!uw Membership Management</title>
-	<link rel="stylesheet" href="../static/css/style.css">
+	<link rel="stylesheet" href="../static/css/style.css?v=membership-3">
 	<script src="../static/js/triangles.js"></script>
 </head>
 <body class="{{ bodyClass }}">
@@ -378,11 +378,11 @@
 				</div>
 			</div>
 			<div class="card-actions">
-				<button class="button" id="refresh-discord-username" onclick="refreshDiscordUsername()">Refresh Discord Username</button>
 				<button class="button" disabled id="update-social-links" onclick="submitSocialLinks()">Update</button>
 			</div>
 			<script>
 				const socialMedia = {{ socialMedia }};
+				const canRefreshDiscordUsername = '{{ canRefreshDiscordUsername }}' === 'true';
 				/*const socialMedia = [
 					{
 						id: "discord",
@@ -438,6 +438,12 @@
 				for (let item of socialMedia) {
 					if (!item.enabled) item.enabled = false;
 					if (!item.value) item.value = '';
+					const discordRefreshButton = item.id === 'discord'
+						? '<span class="inline-icon-button-wrapper" title="' +
+							(canRefreshDiscordUsername ? 'Refresh Discord username' : 'This person is no longer in the Discord server') +
+							'"><button class="button inline-icon-button" id="refresh-discord-username" onclick="refreshDiscordUsername()" type="button" aria-label="Refresh Discord username" ' +
+							(canRefreshDiscordUsername ? '' : 'disabled') + '>↻</button></span>'
+						: '';
 					let html = `
 					<div class="social-link-item" data-id="${item.id}">
 						<div class="social-link-item-header">
@@ -449,7 +455,10 @@
 							</div>
 						</div>
 						<div class="social-link-item-body ${item.enabled ? '' : 'hide'}">
-							<input class="textfield social-link-item-input" ${item.immutable ? 'disabled' : ''} type="text" id="social-link-${item.id}" placeholder="${item.description}" value="${escapeHtml(item.value)}">
+							<div class="social-link-input-row">
+								<input class="textfield social-link-item-input" ${item.immutable ? 'disabled' : ''} type="text" id="social-link-${item.id}" placeholder="${item.description}" value="${escapeHtml(item.value)}">
+								${discordRefreshButton}
+							</div>
 						</div>
 					</div>
 					`;
@@ -492,7 +501,7 @@
 						console.error(error);
 						alert(error.message || 'An error occurred. Please try again later.');
 					} finally {
-						button.disabled = false;
+						button.disabled = !canRefreshDiscordUsername;
 						button.classList.remove('loading');
 					}
 				}

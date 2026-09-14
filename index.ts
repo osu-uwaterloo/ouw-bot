@@ -996,6 +996,7 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, re
         osuUsername: JSON.stringify(osuUsername).replace(/</g, '\\u003c'),
         name: JSON.stringify((socialLinksInSheetJson.name ?? '').toString()).replace(/</g, '\\u003c'),
         bio: JSON.stringify((socialLinksInSheetJson.bio ?? '').toString()).replace(/</g, '\\u003c'),
+        canRefreshDiscordUsername: (!adminActorId || Boolean(client.guilds.cache.get(env.SERVER_ID)?.members.cache.has(userId))).toString(),
         socialMedia: JSON.stringify(socialLinks)
     }));
 });
@@ -1120,8 +1121,8 @@ app.post('/membership/:encryptedUserIdAndExpiry/refresh-discord-username', async
     const { userId, row } = reqData;
 
     try {
-        const guild = await client.guilds.fetch(env.SERVER_ID);
-        const member = await guild.members.fetch(userId);
+        const guild = client.guilds.cache.get(env.SERVER_ID) ?? await client.guilds.fetch(env.SERVER_ID);
+        const member = guild.members.cache.get(userId) ?? await guild.members.fetch(userId);
         const username = member.user.username;
         if (row.get('discord_username') !== username) {
             await sheet.updateRow(row, { discord_username: username });
@@ -1130,6 +1131,9 @@ app.post('/membership/:encryptedUserIdAndExpiry/refresh-discord-username', async
         return res.send({ status: 'success', username });
     } catch (error) {
         console.error(`Could not refresh Discord username for ${userId}:`, error);
+        if (error instanceof DiscordAPIError && error.code === 10007) {
+            return res.status(404).send({ status: 'error', message: 'This person is no longer in the Discord server, so their username cannot be refreshed.' });
+        }
         return res.status(502).send({ status: 'error', message: 'Could not refresh the Discord username. Please try again later.' });
     }
 });
