@@ -807,6 +807,8 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, re
         watiam: row.get('watiam') ?? 'Unknown',
         osuAccount: osuAccountId,
         displayOnWebsite: utils.parseHumanBool(row.get('display_on_website'), false),
+        name: JSON.stringify((socialLinksInSheetJson.name ?? '').toString()).replace(/</g, '\\u003c'),
+        bio: JSON.stringify((socialLinksInSheetJson.bio ?? '').toString()).replace(/</g, '\\u003c'),
         socialMedia: JSON.stringify(socialLinks)
     }));
 });
@@ -968,6 +970,68 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-display-on-website', asyn
     res.send({ status: 'success' });
 });
 
+// Update public profile name
+app.post('/membership/:encryptedUserIdAndExpiry/update-name', async (req: express.Request, res: express.Response): Promise<any> => {
+    const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
+
+    const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
+    if (!reqData) return;
+    const { row } = reqData;
+
+    if (typeof req.body.name !== 'string') {
+        return res.status(400).send({ status: 'error', message: 'Name must be text.' });
+    }
+    const name = req.body.name.trim();
+    if (name.length > 20) {
+        return res.status(400).send({ status: 'error', message: 'Name must be 20 characters or fewer.' });
+    }
+
+    let socialLinks: Record<string, string> = {};
+    try {
+        const parsed = JSON.parse(row.get('social_links') || '{}');
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) socialLinks = parsed;
+    } catch {}
+    if (name) {
+        socialLinks.name = name;
+    } else {
+        delete socialLinks.name;
+    }
+    await sheet.updateRow(row, { social_links: JSON.stringify(socialLinks) });
+    schedulePublicMembersSync('name updated');
+    res.send({ status: 'success' });
+});
+
+// Update public profile bio
+app.post('/membership/:encryptedUserIdAndExpiry/update-bio', async (req: express.Request, res: express.Response): Promise<any> => {
+    const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
+
+    const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
+    if (!reqData) return;
+    const { row } = reqData;
+
+    if (typeof req.body.bio !== 'string') {
+        return res.status(400).send({ status: 'error', message: 'Bio must be text.' });
+    }
+    const bio = req.body.bio.trim();
+    if (bio.length > 200) {
+        return res.status(400).send({ status: 'error', message: 'Bio must be 200 characters or fewer.' });
+    }
+
+    let socialLinks: Record<string, string> = {};
+    try {
+        const parsed = JSON.parse(row.get('social_links') || '{}');
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) socialLinks = parsed;
+    } catch {}
+    if (bio) {
+        socialLinks.bio = bio;
+    } else {
+        delete socialLinks.bio;
+    }
+    await sheet.updateRow(row, { social_links: JSON.stringify(socialLinks) });
+    schedulePublicMembersSync('bio updated');
+    res.send({ status: 'success' });
+});
+
 // Update social media links
 app.post('/membership/:encryptedUserIdAndExpiry/update-social-links', async (req: express.Request, res: express.Response): Promise<any> => {
     const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
@@ -978,11 +1042,22 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-social-links', async (req
 
     const socialLinks = req.body.socialLinks;
 
+    if (!socialLinks || typeof socialLinks !== 'object' || Array.isArray(socialLinks)) {
+        return res.status(400).send({ status: 'error', message: 'Social links must be an object.' });
+    }
+
+    try {
+        const existingSocialLinks = JSON.parse(row.get('social_links') || '{}');
+        if (typeof existingSocialLinks.bio === 'string') socialLinks.bio = existingSocialLinks.bio;
+        if (typeof existingSocialLinks.name === 'string') socialLinks.name = existingSocialLinks.name;
+    } catch {}
+
     
     const discordUsernameInSheet = row.get('discord_username') ?? '';
 
     // Validate
     for (const key in socialLinks) {
+        if (key === 'bio' || key === 'name') continue;
         const field = socialMediaFields.find(field => field.id === key);
         const value = socialLinks[key];
         if (!field) {

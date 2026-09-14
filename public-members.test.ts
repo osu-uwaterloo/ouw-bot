@@ -42,6 +42,7 @@ test('honours website opt-in and hidden Discord while normalizing website links'
                 discord: '',
                 'personal-website': 'example.com/about',
                 github: 'example',
+                bio: 'Mapper, player, and tournament enjoyer.',
             }),
         }),
     ];
@@ -56,6 +57,7 @@ test('honours website opt-in and hidden Discord while normalizing website links'
     assert.equal(snapshot.members[0].discord, null);
     assert.equal(snapshot.members[0].website, 'https://example.com/about');
     assert.equal(snapshot.members[0].github, 'example');
+    assert.equal(snapshot.members[0].bio, 'Mapper, player, and tournament enjoyer.');
 });
 
 test('does not publish opted-in rows without a current section role', () => {

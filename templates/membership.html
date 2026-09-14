@@ -147,6 +147,108 @@
 				}
 			</script>
 		</div>
+		<div id="profile-name" class="card">
+			<div class="card-title">Name</div>
+			<div class="card-body">
+				<p>Add the name you want shown beside your osu! username.</p>
+				<p class="note">This section will only take effect if you have chosen to display your profile on the club website in the previous section. Leave it empty if you do not want your name displayed.</p>
+				<input class="textfield big" id="member-name" maxlength="20" placeholder="Display name (optional)">
+			</div>
+			<div class="card-actions bio-actions">
+				<span class="bio-character-count" id="name-character-count">0 / 20</span>
+				<button class="button" disabled id="update-name" onclick="submitName()">Save Name</button>
+			</div>
+			<script>
+				let savedName = {{ name }};
+				let nameNew = savedName;
+				const nameInput = document.querySelector('#member-name');
+				const nameButton = document.querySelector('#update-name');
+				const nameCount = document.querySelector('#name-character-count');
+				nameInput.value = savedName;
+				const updateNameEditor = () => {
+					nameNew = nameInput.value.trim();
+					nameCount.textContent = `${nameInput.value.length} / 20`;
+					nameButton.disabled = nameNew === savedName;
+				};
+				nameInput.addEventListener('input', updateNameEditor);
+				updateNameEditor();
+
+				async function submitName() {
+					nameButton.disabled = true;
+					nameButton.classList.add('loading');
+					nameInput.disabled = true;
+					try {
+						const response = await fetch('{{ membershipManagementBaseUrl }}/update-name', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({ token, name: nameNew }),
+						});
+						const json = await response.json();
+						if (!response.ok || json.status !== 'success') throw new Error(json.message || 'Could not save name.');
+						savedName = nameNew;
+						nameInput.value = savedName;
+					} catch (error) {
+						console.error(error);
+						alert(error.message || 'An error occurred. Please try again later.');
+					} finally {
+						nameInput.disabled = false;
+						nameButton.classList.remove('loading');
+						updateNameEditor();
+					}
+				}
+			</script>
+		</div>
+		<div id="profile-bio" class="card">
+			<div class="card-title">Bio</div>
+			<div class="card-body">
+				<p>Tell other club members a little about yourself.</p>
+				<p class="note">This section will only take effect if you have chosen to display your profile on the club website in the previous section. Leave it empty if you do not want your bio displayed.</p>
+				<textarea class="textfield bio-textarea" id="member-bio" maxlength="200" rows="5" placeholder="What do you play, map, stream, or study?"></textarea>
+			</div>
+			<div class="card-actions bio-actions">
+				<span class="bio-character-count" id="bio-character-count">0 / 200</span>
+				<button class="button" disabled id="update-bio" onclick="submitBio()">Save Bio</button>
+			</div>
+			<script>
+				let savedBio = {{ bio }};
+				let bioNew = savedBio;
+				const bioInput = document.querySelector('#member-bio');
+				const bioButton = document.querySelector('#update-bio');
+				const bioCount = document.querySelector('#bio-character-count');
+				bioInput.value = savedBio;
+				const updateBioEditor = () => {
+					bioNew = bioInput.value.trim();
+					bioCount.textContent = `${bioInput.value.length} / 200`;
+					bioButton.disabled = bioNew === savedBio;
+				};
+				bioInput.addEventListener('input', updateBioEditor);
+				updateBioEditor();
+
+				async function submitBio() {
+					bioButton.disabled = true;
+					bioButton.classList.add('loading');
+					bioInput.disabled = true;
+					try {
+						const response = await fetch('{{ membershipManagementBaseUrl }}/update-bio', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({ token, bio: bioNew }),
+						});
+						const json = await response.json();
+						if (!response.ok || json.status !== 'success') throw new Error(json.message || 'Could not save bio.');
+						savedBio = bioNew;
+						bioInput.value = savedBio;
+					} catch (error) {
+						console.error(error);
+						alert(error.message || 'An error occurred. Please try again later.');
+					} finally {
+						bioInput.disabled = false;
+						bioButton.classList.remove('loading');
+						updateBioEditor();
+					}
+				}
+			</script>
+		</div>
 		<div id="social-links" class="card">
 			<div class="card-title">Social Links</div>
 			<div class="card-body">

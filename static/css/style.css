@@ -412,6 +412,23 @@ body {
 	border-bottom-color: #f44336;
 }
 
+.bio-textarea {
+	box-sizing: border-box;
+	min-height: 7em;
+	resize: vertical;
+	line-height: 1.45;
+}
+
+.bio-actions {
+	align-items: center;
+	justify-content: space-between;
+}
+
+.bio-character-count {
+	color: var(--gray-1);
+	font-size: 0.85em;
+}
+
 .button {
 	background-color: var(--accent-colour);
 	color: var(--dark-text);

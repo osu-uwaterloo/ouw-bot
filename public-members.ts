@@ -9,6 +9,8 @@ export interface PublicMember {
     twitch?: string | null;
     youtube?: string | null;
     github?: string | null;
+    name?: string | null;
+    bio?: string | null;
     role?: string | null;
 }
 
@@ -116,6 +118,8 @@ export function buildPublicMemberSnapshot(
             twitch: text(socialLinks.twitch) || null,
             youtube: text(socialLinks.youtube) || null,
             github: text(socialLinks.github) || null,
+            name: text(socialLinks.name).slice(0, 20) || null,
+            bio: text(socialLinks.bio).slice(0, 200) || null,
             role: category === 'executive' ? 'Executive' : null,
         });
     }

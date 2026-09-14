@@ -106,7 +106,7 @@ Here is a template for the `env.json` file:
 	"URL": "http://localhost:3000", // The URL of the bot, where the verification website hosts, without slash at the end
 	"EMAIL_VERIFICATION_ADDRESS": "verify@ouw.s23.moe", // Address routed to the Cloudflare Email Worker
 	"EMAIL_VERIFICATION_WEBHOOK_SECRET": "generate-a-long-random-secret", // Must match the Worker's WEBHOOK_SECRET
-	"MEMBERS_API_URL": "https://ouw-members-api.example.workers.dev/v1/members", // Public member snapshot API
+	"MEMBERS_API_URL": "https://members.ouw.s23.moe/v1/members", // Public member snapshot API
 	"MEMBERS_API_SYNC_TOKEN": "generate-another-long-random-secret", // Must match the members API Worker's SYNC_TOKEN
 	"AES_ENCRYPTION_SECRET": "MEOWMEOWMEOW", // The secret for AES encryption, for the verification url state. Generate a random string for this
 	"GOOGLE_CLIENT_EMAIL": "ouw-bot@osu-uwaterloo.iam.gserviceaccount.com", // The service account email for Google Sheets API
