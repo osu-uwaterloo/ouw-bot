@@ -887,7 +887,7 @@ const socialMediaFields: SocialMediaField[] = [
         id: "discord",
         name: "Discord",
         description: "Username",
-        regex: "^[a-zA-Z0-9_]{2,32}$"
+        regex: "^(?!.*\\.\\.)[a-zA-Z0-9._]{2,32}$"
     },
     {
         id: "personal-website",
@@ -905,13 +905,13 @@ const socialMediaFields: SocialMediaField[] = [
         id: "twitch",
         name: "Twitch",
         description: "Username",
-        regex: "^[a-zA-Z0-9_]{4,25}$"
+        regex: "^[a-zA-Z0-9_-]{4,25}$"
     },
     {
         id: "youtube",
         name: "YouTube",
         description: "Channel Handle",
-        regex: "^[a-zA-Z0-9_]{1,39}$"
+        regex: "^[a-zA-Z0-9._·-]{3,30}$"
     }
 ];
 
