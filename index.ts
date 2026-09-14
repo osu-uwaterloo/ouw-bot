@@ -1324,11 +1324,36 @@ app.post('/membership/:encryptedUserIdAndExpiry/unlink-osu-account', async (req:
     res.send({ status: 'success' });
 });
 
+type WebsiteProfileChange = {
+    name: string;
+    before: string;
+    after: string;
+};
+
+function logWebsiteProfileChanges(userId: string, adminActorId: string | null, changes: WebsiteProfileChange[]) {
+    if (changes.length === 0) return;
+
+    const guild = client.guilds.cache.get(env.SERVER_ID);
+    const actorId = adminActorId ?? userId;
+    const actor = guild?.members.cache.get(actorId) ?? null;
+    const description = adminActorId
+        ? `Updated the club website profile for <@${userId}>.`
+        : 'Updated their club website profile.';
+
+    logger.info(actor, 'Updated website profile', description, embed => {
+        embed.addFields(changes.map(change => ({
+            name: change.name,
+            value: `${change.before || '(empty)'} → ${change.after || '(empty)'}`,
+        })));
+        if (adminActorId) embed.addFields({ name: 'Member', value: `<@${userId}>` });
+    });
+}
+
 // Update display on website status
 app.post('/membership/:encryptedUserIdAndExpiry/update-profile', async (req: express.Request, res: express.Response): Promise<any> => {
     const reqData = await getDataByEncryptedUserIdAndExpiry(req.params.encryptedUserIdAndExpiry, res);
     if (!reqData) return;
-    const { row } = reqData;
+    const { userId, row, adminActorId } = reqData;
 
     const { displayOnWebsite } = req.body;
     if (typeof displayOnWebsite !== 'boolean') {
@@ -1356,6 +1381,12 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-profile', async (req: exp
         const parsed = JSON.parse(row.get('social_links') || '{}');
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) socialLinks = parsed;
     } catch {}
+    const oldDisplayOnWebsite = utils.parseHumanBool(row.get('display_on_website'), false);
+    const oldProfile = {
+        name: typeof socialLinks.name === 'string' ? socialLinks.name.trim() : '',
+        program: typeof socialLinks.program === 'string' ? socialLinks.program.trim() : '',
+        bio: typeof socialLinks.bio === 'string' ? socialLinks.bio.trim() : '',
+    };
     for (const [key, value] of Object.entries({ name, program, bio })) {
         if (value) socialLinks[key] = value;
         else delete socialLinks[key];
@@ -1366,6 +1397,20 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-profile', async (req: exp
         social_links: JSON.stringify(socialLinks),
     });
     await syncPublicMembersNow('website profile updated');
+    const changes: WebsiteProfileChange[] = [];
+    if (oldDisplayOnWebsite !== displayOnWebsite) {
+        changes.push({
+            name: 'Website visibility',
+            before: oldDisplayOnWebsite ? 'Displayed' : 'Hidden',
+            after: displayOnWebsite ? 'Displayed' : 'Hidden',
+        });
+    }
+    for (const [key, label] of Object.entries({ name: 'Additional name', program: 'Program', bio: 'Bio' })) {
+        const before = oldProfile[key as keyof typeof oldProfile];
+        const after = { name, program, bio }[key as keyof typeof oldProfile];
+        if (before !== after) changes.push({ name: label, before, after });
+    }
+    logWebsiteProfileChanges(userId, adminActorId, changes);
     return res.send({ status: 'success' });
 });
 
@@ -1375,13 +1420,24 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-display-on-website', asyn
     
     const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
     if (!reqData) return;
-    const { userId, expiry, row } = reqData;
+    const { userId, row, adminActorId } = reqData;
 
     const displayOnWebsite = req.body.displayOnWebsite;
+    if (typeof displayOnWebsite !== 'boolean') {
+        return res.status(400).send({ status: 'error', message: 'Website visibility must be true or false.' });
+    }
+    const oldDisplayOnWebsite = utils.parseHumanBool(row.get('display_on_website'), false);
     await sheet.updateRow(row, {
         display_on_website: displayOnWebsite.toString()
     });
     await syncPublicMembersNow('website visibility updated');
+    if (oldDisplayOnWebsite !== displayOnWebsite) {
+        logWebsiteProfileChanges(userId, adminActorId, [{
+            name: 'Website visibility',
+            before: oldDisplayOnWebsite ? 'Displayed' : 'Hidden',
+            after: displayOnWebsite ? 'Displayed' : 'Hidden',
+        }]);
+    }
 
     // Return success
     res.send({ status: 'success' });
@@ -1393,7 +1449,7 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-name', async (req: expres
 
     const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
     if (!reqData) return;
-    const { row } = reqData;
+    const { userId, row, adminActorId } = reqData;
 
     if (typeof req.body.name !== 'string') {
         return res.status(400).send({ status: 'error', message: 'Name must be text.' });
@@ -1408,6 +1464,7 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-name', async (req: expres
         const parsed = JSON.parse(row.get('social_links') || '{}');
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) socialLinks = parsed;
     } catch {}
+    const oldName = typeof socialLinks.name === 'string' ? socialLinks.name.trim() : '';
     if (name) {
         socialLinks.name = name;
     } else {
@@ -1415,6 +1472,9 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-name', async (req: expres
     }
     await sheet.updateRow(row, { social_links: JSON.stringify(socialLinks) });
     schedulePublicMembersSync('name updated');
+    if (oldName !== name) {
+        logWebsiteProfileChanges(userId, adminActorId, [{ name: 'Additional name', before: oldName, after: name }]);
+    }
     res.send({ status: 'success' });
 });
 
@@ -1424,7 +1484,7 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-program', async (req: exp
 
     const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
     if (!reqData) return;
-    const { row } = reqData;
+    const { userId, row, adminActorId } = reqData;
 
     if (typeof req.body.program !== 'string') {
         return res.status(400).send({ status: 'error', message: 'Program must be text.' });
@@ -1439,6 +1499,7 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-program', async (req: exp
         const parsed = JSON.parse(row.get('social_links') || '{}');
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) socialLinks = parsed;
     } catch {}
+    const oldProgram = typeof socialLinks.program === 'string' ? socialLinks.program.trim() : '';
     if (program) {
         socialLinks.program = program;
     } else {
@@ -1446,6 +1507,9 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-program', async (req: exp
     }
     await sheet.updateRow(row, { social_links: JSON.stringify(socialLinks) });
     schedulePublicMembersSync('program updated');
+    if (oldProgram !== program) {
+        logWebsiteProfileChanges(userId, adminActorId, [{ name: 'Program', before: oldProgram, after: program }]);
+    }
     res.send({ status: 'success' });
 });
 
@@ -1455,7 +1519,7 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-bio', async (req: express
 
     const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
     if (!reqData) return;
-    const { row } = reqData;
+    const { userId, row, adminActorId } = reqData;
 
     if (typeof req.body.bio !== 'string') {
         return res.status(400).send({ status: 'error', message: 'Bio must be text.' });
@@ -1470,6 +1534,7 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-bio', async (req: express
         const parsed = JSON.parse(row.get('social_links') || '{}');
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) socialLinks = parsed;
     } catch {}
+    const oldBio = typeof socialLinks.bio === 'string' ? socialLinks.bio.trim() : '';
     if (bio) {
         socialLinks.bio = bio;
     } else {
@@ -1477,6 +1542,9 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-bio', async (req: express
     }
     await sheet.updateRow(row, { social_links: JSON.stringify(socialLinks) });
     schedulePublicMembersSync('bio updated');
+    if (oldBio !== bio) {
+        logWebsiteProfileChanges(userId, adminActorId, [{ name: 'Bio', before: oldBio, after: bio }]);
+    }
     res.send({ status: 'success' });
 });
 
