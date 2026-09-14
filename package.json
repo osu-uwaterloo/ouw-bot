@@ -34,7 +34,7 @@
   "scripts": {
     "postinstall": "patch-package",
     "start": "npx tsx index.ts",
-    "test": "tsx --test inbound-email.test.ts",
+    "test": "tsx --test inbound-email.test.ts public-members.test.ts",
     "typecheck": "tsc"
   },
   "engines": {

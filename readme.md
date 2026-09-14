@@ -20,6 +20,8 @@ o!uw bot is a Discord bot for osu!uwaterloo that provides various features to im
 ### Sheet integration
 
 - Auto records user's watiam, Discord ID, osu! account and so on to a sheet
+- Pushes an opt-in public member snapshot to the members API after profile or relevant Discord role changes, and once at startup
+- Assigns website sections from Discord roles with priority: Executive, Alumni, then current UW student
 
 ### Logging
 
@@ -93,6 +95,7 @@ Here is a template for the `env.json` file:
 		*/
 	},
 	"EXEC_ROLE_ID": "727727727727727", // Role ID of executives
+	"ALUMNI_ROLE_ID": "727727727727727", // Role ID of alumni; controls the Alumni section on the website
 	"VERIFY_CHANNEL_ID": "727727727727727", // Channel ID of the manual verification channel )where the voucher system runs)
 	"LOGGING_CHANNEL_ID": "727727727727727", // Channel ID of the logging channel to log the bot events
 	"TIME_727_SPAM_CHANNEL_ID": "727727727727727", // Channel ID of the time spam channel (bot posts "time" messages here)
@@ -103,6 +106,8 @@ Here is a template for the `env.json` file:
 	"URL": "http://localhost:3000", // The URL of the bot, where the verification website hosts, without slash at the end
 	"EMAIL_VERIFICATION_ADDRESS": "verify@ouw.s23.moe", // Address routed to the Cloudflare Email Worker
 	"EMAIL_VERIFICATION_WEBHOOK_SECRET": "generate-a-long-random-secret", // Must match the Worker's WEBHOOK_SECRET
+	"MEMBERS_API_URL": "https://ouw-members-api.example.workers.dev/v1/members", // Public member snapshot API
+	"MEMBERS_API_SYNC_TOKEN": "generate-another-long-random-secret", // Must match the members API Worker's SYNC_TOKEN
 	"AES_ENCRYPTION_SECRET": "MEOWMEOWMEOW", // The secret for AES encryption, for the verification url state. Generate a random string for this
 	"GOOGLE_CLIENT_EMAIL": "ouw-bot@osu-uwaterloo.iam.gserviceaccount.com", // The service account email for Google Sheets API
 	"GOOGLE_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----MEOW-----END PRIVATE KEY-----\n", // The private key for Google Sheets API

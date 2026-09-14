@@ -35,6 +35,7 @@ import Logger from './logging';
 import * as utils from './utils';
 import { DateTime } from 'luxon';
 import speakeasy from 'speakeasy';
+import { buildPublicMemberSnapshot, enrichOsuUsernames, pushPublicMemberSnapshot } from './public-members.js';
 
 type BotInteraction =
     ButtonInteraction |
@@ -76,6 +77,73 @@ const verificationPool = new Map<string, VerificationInfo>();
 const VERIFICATION_ADDRESS = (env.EMAIL_VERIFICATION_ADDRESS ?? 'verify@ouw.s23.moe').toLowerCase();
 const VERIFICATION_CHALLENGE_TTL = 10 * 60 * 1000;
 const MAX_INBOUND_EMAIL_SIZE = 256 * 1024;
+
+let publicMembersSyncTimer: NodeJS.Timeout | null = null;
+let publicMembersSyncRunning = false;
+let publicMembersSyncRequested = false;
+let publicMembersSyncDisabledWarningShown = false;
+
+async function syncPublicMembersNow(reason: string): Promise<void> {
+    const endpoint = env.MEMBERS_API_URL;
+    const token = env.MEMBERS_API_SYNC_TOKEN;
+    if (!endpoint || !token) {
+        if (!publicMembersSyncDisabledWarningShown) {
+            console.warn('Public member sync is disabled: MEMBERS_API_URL or MEMBERS_API_SYNC_TOKEN is missing.');
+            publicMembersSyncDisabledWarningShown = true;
+        }
+        return;
+    }
+
+    if (publicMembersSyncRunning) {
+        publicMembersSyncRequested = true;
+        return;
+    }
+
+    publicMembersSyncRunning = true;
+    try {
+        do {
+            publicMembersSyncRequested = false;
+            const guild = await client.guilds.fetch(env.SERVER_ID);
+            const [rows, discordMembers] = await Promise.all([
+                sheet.getAllRows(),
+                guild.members.fetch(),
+            ]);
+            const profiles = new Map(Array.from(discordMembers.values(), member => [
+                member.id,
+                {
+                    username: member.user.username,
+                    roleIds: new Set(member.roles.cache.keys()),
+                },
+            ]));
+            let snapshot = buildPublicMemberSnapshot(rows, profiles, {
+                executiveRoleId: env.EXEC_ROLE_ID,
+                alumniRoleId: env.ALUMNI_ROLE_ID ?? env.SKIP_ROLE_IDS?.[0],
+                currentStudentRoleId: env.ROLE_ID.CURRENT_UW_STUDENT,
+            });
+            try {
+                snapshot = await enrichOsuUsernames(snapshot, env.OSU_CLIENT_ID.toString(), env.OSU_CLIENT_SECRET);
+            } catch (error) {
+                console.warn('Could not refresh osu! usernames; syncing the remaining public profile data:', error);
+            }
+
+            await pushPublicMemberSnapshot(endpoint, token, snapshot);
+            console.log(`Synced ${snapshot.members.length} public members (${reason}).`);
+        } while (publicMembersSyncRequested);
+    } catch (error) {
+        console.error(`Could not sync the public member list (${reason}):`, error);
+    } finally {
+        publicMembersSyncRunning = false;
+    }
+}
+
+function schedulePublicMembersSync(reason: string, delayMs = 1_000): void {
+    if (publicMembersSyncTimer) clearTimeout(publicMembersSyncTimer);
+    publicMembersSyncTimer = setTimeout(() => {
+        publicMembersSyncTimer = null;
+        void syncPublicMembersNow(reason);
+    }, delayMs);
+    publicMembersSyncTimer.unref();
+}
 
 
 const checkExpired = () => {
@@ -144,6 +212,7 @@ async function completeEmailVerification(userId: string, verificationInfo: Verif
 
     try {
         await sheet.addMember(userId, member.user.username, watiam);
+        schedulePublicMembersSync('member verified');
     } catch (error) {
         console.error('Error adding member to the sheet:', error);
     }
@@ -809,6 +878,7 @@ app.get('/osu-auth-callback', async (req: express.Request, res: express.Response
     await sheet.updateRow(row, {
         osu: `https://osu.ppy.sh/users/${osuAccountId}`
     });
+    schedulePublicMembersSync('osu account linked');
 
     // Logging
     logger.info(null, 'Linked osu! account', 'They have linked their osu! account.', embed => {
@@ -858,6 +928,7 @@ app.post('/membership/:encryptedUserIdAndExpiry/unlink-osu-account', async (req:
     await sheet.updateRow(row, {
         osu: ''
     });
+    schedulePublicMembersSync('osu account unlinked');
 
     // Logging
     logger.info(null, 'Unlinked osu! account', 'They have unlinked their osu! account.', embed => {
@@ -891,6 +962,7 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-display-on-website', asyn
     await sheet.updateRow(row, {
         display_on_website: displayOnWebsite.toString()
     });
+    schedulePublicMembersSync('website visibility updated');
 
     // Return success
     res.send({ status: 'success' });
@@ -942,6 +1014,7 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-social-links', async (req
     await sheet.updateRow(row, {
         social_links: JSON.stringify(socialLinks)
     });
+    schedulePublicMembersSync('social links updated');
 
     // Return success
     res.send({ status: 'success' });
@@ -2081,6 +2154,27 @@ app.listen(PORT, () => {
 });
 
 client.login(env.DISCORD_BOT_TOKEN);
+
+client.once('ready', () => {
+    schedulePublicMembersSync('bot started', 0);
+});
+
+client.on('guildMemberUpdate', (oldMember, newMember) => {
+    if (newMember.guild.id !== env.SERVER_ID) return;
+    const relevantRoleIds = [
+        env.EXEC_ROLE_ID,
+        env.ALUMNI_ROLE_ID ?? env.SKIP_ROLE_IDS?.[0],
+        env.ROLE_ID.CURRENT_UW_STUDENT,
+    ].filter(Boolean);
+    const categoryChanged = relevantRoleIds.some(roleId => {
+        return oldMember.roles.cache.has(roleId) !== newMember.roles.cache.has(roleId);
+    });
+    if (categoryChanged) schedulePublicMembersSync('Discord role updated');
+});
+
+client.on('userUpdate', (oldUser, newUser) => {
+    if (oldUser.username !== newUser.username) schedulePublicMembersSync('Discord username updated');
+});
 
 client.once('ready', () => {
     // client.user?.setPresence({ activities: [] });
