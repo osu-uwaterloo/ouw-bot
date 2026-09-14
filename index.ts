@@ -655,7 +655,7 @@ async function validateAdminMembershipSession(token: string | undefined, res: ex
 
     try {
         const guild = await client.guilds.fetch(env.SERVER_ID);
-        const actor = await guild.members.fetch(session.actorId);
+        const actor = guild.members.cache.get(session.actorId) ?? await guild.members.fetch(session.actorId);
         if (!actor.permissions.has(PermissionFlagsBits.Administrator)) {
             adminMembershipSessions.delete(token!);
             res.status(403).send(getTemplate('error', { message: 'You no longer have permission to manage memberships.' }));
@@ -790,61 +790,65 @@ app.get('/membership-admin/:adminToken', async (req: express.Request, res: expre
     const validated = await validateAdminMembershipSession(req.params.adminToken, res);
     if (!validated) return;
 
-    const [rows, guild] = await Promise.all([
-        sheet.getAllRows(),
-        client.guilds.fetch(env.SERVER_ID),
-    ]);
-    const guildMembers = await guild.members.fetch();
-    const alumniRoleId = env.ALUMNI_ROLE_ID ?? env.SKIP_ROLE_IDS?.[0];
+    try {
+        const rows = await sheet.getAllRows();
+        const guildMembers = validated.actor.guild.members.cache;
+        const alumniRoleId = env.ALUMNI_ROLE_ID ?? env.SKIP_ROLE_IDS?.[0];
 
-    const members = rows.map((row, index) => {
-        const discordId = String(row.get('discord_id') ?? '').trim();
-        const guildMember = discordId ? guildMembers.get(discordId) : null;
-        const storedDiscordUsername = String(row.get('discord_username') ?? '').trim();
-        const rawOsu = String(row.get('osu') ?? '').trim();
-        const osuAccountId = rawOsu.match(/^\d+$/)?.[0] ?? rawOsu.match(/osu\.ppy\.sh\/users\/(\d+)/i)?.[1] ?? '';
-        let profile: Record<string, unknown> = {};
-        try {
-            const parsed = JSON.parse(String(row.get('social_links') ?? '{}'));
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) profile = parsed;
-        } catch {}
+        const members = rows.map((row, index) => {
+            const discordId = String(row.get('discord_id') ?? '').trim();
+            const guildMember = discordId ? guildMembers.get(discordId) : null;
+            const storedDiscordUsername = String(row.get('discord_username') ?? '').trim();
+            const rawOsu = String(row.get('osu') ?? '').trim();
+            const osuAccountId = rawOsu.match(/^\d+$/)?.[0] ?? rawOsu.match(/osu\.ppy\.sh\/users\/(\d+)/i)?.[1] ?? '';
+            let profile: Record<string, unknown> = {};
+            try {
+                const parsed = JSON.parse(String(row.get('social_links') ?? '{}'));
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) profile = parsed;
+            } catch {}
 
-        let category = 'Other';
-        if (guildMember?.roles.cache.has(env.EXEC_ROLE_ID)) category = 'Executive';
-        else if (alumniRoleId && guildMember?.roles.cache.has(alumniRoleId)) category = 'Alumni';
-        else if (guildMember?.roles.cache.has(env.ROLE_ID.CURRENT_UW_STUDENT)) category = 'Current Student';
-        else if (guildMember?.roles.cache.has(env.ROLE_ID.VERIFIED)) category = 'Verified';
+            let category = 'Other';
+            if (guildMember?.roles.cache.has(env.EXEC_ROLE_ID)) category = 'Executive';
+            else if (alumniRoleId && guildMember?.roles.cache.has(alumniRoleId)) category = 'Alumni';
+            else if (guildMember?.roles.cache.has(env.ROLE_ID.CURRENT_UW_STUDENT)) category = 'Current Student';
+            else if (guildMember?.roles.cache.has(env.ROLE_ID.VERIFIED)) category = 'Verified';
 
-        const editToken = discordId
-            ? createAdminMembershipSession(validated.session.actorId, discordId, validated.session.expiresAt)
-            : null;
-        return {
-            id: discordId || `legacy-${index}`,
-            discordId,
-            displayName: guildMember?.displayName ?? (storedDiscordUsername || 'Unknown user'),
-            discordUsername: guildMember?.user.username ?? (storedDiscordUsername || 'Unknown user'),
-            globalName: guildMember?.user.globalName ?? '',
-            storedDiscordUsername,
-            additionalName: typeof profile.name === 'string' ? profile.name : '',
-            watiam: String(row.get('watiam') ?? '').trim(),
-            osuAccountId,
-            category,
-            inServer: Boolean(guildMember),
-            displayOnWebsite: utils.parseHumanBool(row.get('display_on_website'), false),
-            hasBio: typeof profile.bio === 'string' && profile.bio.trim().length > 0,
-            editUrl: editToken ? `${env.URL}/membership/${editToken}?admin=1&embed=1` : null,
-        };
-    }).sort((left, right) => left.discordUsername.localeCompare(right.discordUsername));
+            const editToken = discordId
+                ? createAdminMembershipSession(validated.session.actorId, discordId, validated.session.expiresAt)
+                : null;
+            return {
+                id: discordId || `legacy-${index}`,
+                discordId,
+                displayName: guildMember?.displayName ?? (storedDiscordUsername || 'Unknown user'),
+                discordUsername: guildMember?.user.username ?? (storedDiscordUsername || 'Unknown user'),
+                globalName: guildMember?.user.globalName ?? '',
+                storedDiscordUsername,
+                additionalName: typeof profile.name === 'string' ? profile.name : '',
+                watiam: String(row.get('watiam') ?? '').trim(),
+                osuAccountId,
+                category,
+                inServer: Boolean(guildMember),
+                displayOnWebsite: utils.parseHumanBool(row.get('display_on_website'), false),
+                hasBio: typeof profile.bio === 'string' && profile.bio.trim().length > 0,
+                editUrl: editToken ? `${env.URL}/membership/${editToken}?admin=1&embed=1` : null,
+            };
+        }).sort((left, right) => left.discordUsername.localeCompare(right.discordUsername));
 
-    res.set({
-        'Cache-Control': 'no-store',
-        'Content-Security-Policy': "frame-ancestors 'self'",
-        'Referrer-Policy': 'no-referrer',
-    });
-    res.send(getTemplate('membership-admin', {
-        adminUsername: escapeHtml(validated.actor.user.username),
-        members: JSON.stringify(members).replace(/</g, '\\u003c'),
-    }));
+        res.set({
+            'Cache-Control': 'no-store',
+            'Content-Security-Policy': "frame-ancestors 'self'",
+            'Referrer-Policy': 'no-referrer',
+        });
+        res.send(getTemplate('membership-admin', {
+            adminUsername: escapeHtml(validated.actor.user.username),
+            members: JSON.stringify(members).replace(/</g, '\\u003c'),
+        }));
+    } catch (error) {
+        console.error('Could not render membership admin page:', error);
+        if (!res.headersSent) {
+            res.status(500).send(getTemplate('error', { message: 'Could not load the member directory. Please try again.' }));
+        }
+    }
 });
 
 // Member social media related types and constants
