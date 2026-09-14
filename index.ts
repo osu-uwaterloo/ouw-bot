@@ -980,19 +980,107 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, re
     res.send(getTemplate('membership', {
         bodyClass: req.query.embed === '1' ? 'embed-mode' : '',
         adminBannerClass: adminActorId ? '' : 'hide',
+        adminFieldsClass: adminActorId ? '' : 'hide',
+        memberOnlyClass: adminActorId ? 'hide' : '',
+        isAdminMode: Boolean(adminActorId).toString(),
         adminTarget: escapeHtml(String(row.get('discord_username') ?? userId)),
         token: encryptedUserIdAndExpiry,
         membershipManagementBaseUrl: `${env.URL}/membership/${encryptedUserIdAndExpiry}`,
         discordId: userId,
         discordUsername: row.get('discord_username'),
-        watiam: row.get('watiam') ?? 'Unknown',
+        watiam: escapeHtml(String(row.get('watiam') ?? 'Unknown')),
+        watiamJson: JSON.stringify(String(row.get('watiam') ?? '')).replace(/</g, '\\u003c'),
         osuAccount: osuAccountId,
+        osuAccountJson: JSON.stringify(osuAccountId),
         displayOnWebsite: utils.parseHumanBool(row.get('display_on_website'), false),
         osuUsername: JSON.stringify(osuUsername).replace(/</g, '\\u003c'),
         name: JSON.stringify((socialLinksInSheetJson.name ?? '').toString()).replace(/</g, '\\u003c'),
         bio: JSON.stringify((socialLinksInSheetJson.bio ?? '').toString()).replace(/</g, '\\u003c'),
         socialMedia: JSON.stringify(socialLinks)
     }));
+});
+
+// Administrators can correct identifiers without impersonating the member's verification flows.
+app.post('/membership/:encryptedUserIdAndExpiry/update-admin-identifiers', async (req: express.Request, res: express.Response): Promise<any> => {
+    const reqData = await getDataByEncryptedUserIdAndExpiry(req.params.encryptedUserIdAndExpiry, res);
+    if (!reqData) return;
+    const { userId, row, adminActorId } = reqData;
+    if (!adminActorId) {
+        return res.status(403).send({ status: 'error', message: 'Only Discord administrators can edit these identifiers.' });
+    }
+
+    try {
+        if (typeof req.body.watiam !== 'string' || typeof req.body.osuUid !== 'string') {
+            return res.status(400).send({ status: 'error', message: 'WatIAM and osu! UID must be text.' });
+        }
+        const watiam = req.body.watiam.trim().toLowerCase();
+        const osuUid = req.body.osuUid.trim();
+        if (!/^[a-z][a-z0-9]{2,7}$/.test(watiam)) {
+            return res.status(400).send({ status: 'error', message: 'WatIAM must be a 3–8 character letter-led username.' });
+        }
+        if (osuUid && !/^\d+$/.test(osuUid)) {
+            return res.status(400).send({ status: 'error', message: 'osu! UID must contain digits only.' });
+        }
+
+        const rows = await sheet.getAllRows();
+        const duplicateWatiam = rows.some(candidate =>
+            String(candidate.get('discord_id') ?? '') !== userId &&
+            String(candidate.get('watiam') ?? '').trim().toLowerCase() === watiam
+        );
+        if (duplicateWatiam) {
+            return res.status(409).send({ status: 'error', message: 'That WatIAM is already assigned to another membership.' });
+        }
+
+        const duplicateOsuUid = osuUid && rows.some(candidate => {
+            if (String(candidate.get('discord_id') ?? '') === userId) return false;
+            const rawOsu = String(candidate.get('osu') ?? '').trim();
+            const candidateOsuUid = rawOsu.match(/^\d+$/)?.[0] ?? rawOsu.match(/osu\.ppy\.sh\/users\/(\d+)/i)?.[1] ?? '';
+            return candidateOsuUid === osuUid;
+        });
+        if (duplicateOsuUid) {
+            return res.status(409).send({ status: 'error', message: 'That osu! UID is already linked to another membership.' });
+        }
+
+        let osuUsername = '';
+        if (osuUid) {
+            try {
+                osuUsername = await getOsuUsername(
+                    Number(osuUid),
+                    env.OSU_CLIENT_ID.toString(),
+                    env.OSU_CLIENT_SECRET,
+                    true,
+                ) ?? '';
+            } catch (error) {
+                console.error(`Could not validate admin-entered osu! UID ${osuUid}:`, error);
+                return res.status(502).send({ status: 'error', message: 'Could not validate that osu! UID. Please try again.' });
+            }
+            if (!osuUsername) {
+                return res.status(400).send({ status: 'error', message: 'No osu! account was found with that UID.' });
+            }
+        }
+
+        const oldWatiam = String(row.get('watiam') ?? '').trim();
+        const rawOldOsu = String(row.get('osu') ?? '').trim();
+        const oldOsuUid = rawOldOsu.match(/^\d+$/)?.[0] ?? rawOldOsu.match(/osu\.ppy\.sh\/users\/(\d+)/i)?.[1] ?? '';
+        await sheet.updateRow(row, {
+            watiam,
+            osu: osuUid ? `https://osu.ppy.sh/users/${osuUid}` : '',
+        });
+        schedulePublicMembersSync('membership identifiers updated by administrator');
+
+        const actor = client.guilds.cache.get(env.SERVER_ID)?.members.cache.get(adminActorId) ?? null;
+        logger.info(actor, 'Updated member identifiers', `Updated identifiers for <@${userId}>.`, embed => {
+            embed.addFields(
+                { name: 'WatIAM', value: `${oldWatiam || 'None'} → ${watiam}`, inline: true },
+                { name: 'osu! UID', value: `${oldOsuUid || 'None'} → ${osuUid || 'None'}`, inline: true },
+            );
+        });
+
+        return res.send({ status: 'success', watiam, osuUid, osuUsername });
+    } catch (error) {
+        console.error(`Could not update membership identifiers for ${userId}:`, error);
+        return res.status(500).send({ status: 'error', message: 'Could not save identifiers. Please try again.' });
+    }
 });
 
 // Refresh the osu! username used as the primary website name

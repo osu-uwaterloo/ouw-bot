@@ -140,6 +140,10 @@ body {
 	gap: 15px;
 }
 
+.card-actions.hide {
+	display: none;
+}
+
 .verification-card {
 	width: min(620px, calc(100vw - 20px));
 	max-height: calc(100dvh - 20px) !important;
@@ -427,6 +431,26 @@ body {
 .bio-character-count {
 	color: var(--gray-1);
 	font-size: 0.85em;
+}
+
+.admin-identifier-fields {
+	display: grid;
+	gap: 14px;
+}
+
+.admin-identifier-fields p {
+	margin: 0;
+}
+
+.admin-identifier-fields label {
+	display: grid;
+	gap: 4px;
+}
+
+.admin-identifier-fields label > span {
+	color: var(--yellow-1);
+	font-size: 0.85em;
+	font-weight: bold;
 }
 
 .button {

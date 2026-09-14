@@ -12,6 +12,7 @@
     <div class="app">
 		<script>
 			const token = '{{ token }}';
+			const isAdminMode = '{{ isAdminMode }}' === 'true';
 		</script>
 		<div class="card admin-edit-banner {{ adminBannerClass }}">
 			<div class="card-body">
@@ -38,10 +39,88 @@
 			<div class="card-body">
 				<p>You can manage your membership below.</p>
 				<p>Managing membership for <code id="managed-discord-username">@{{discordUsername}}</code> (<code>{{discordId}}</code>)</p>
-				<p>WatIAM: <code>{{watiam}}</code></p>
+				<p>WatIAM: <code id="managed-watiam">{{watiam}}</code></p>
 				<p class="note">Use the <code>/manage_membership</code> command in the Discord server to access this page later.</p>
-				<p class="note">If you want to change WatIAM or remove your membership, please contact an executive.</p>
+				<p class="note {{ memberOnlyClass }}">If you want to change WatIAM or remove your membership, please contact an executive.</p>
 			</div>
+		</div>
+
+		<div id="admin-identifiers" class="card {{ adminFieldsClass }}">
+			<div class="card-title">Administrator Fields</div>
+			<div class="card-body admin-identifier-fields">
+				<p>Edit the identifiers stored for this member. These fields bypass the normal email and osu! OAuth verification flows.</p>
+				<label>
+					<span>WatIAM</span>
+					<input class="textfield big" id="admin-watiam" autocomplete="off" maxlength="8" placeholder="e.g. o123uw">
+				</label>
+				<label>
+					<span>osu! UID</span>
+					<input class="textfield big" id="admin-osu-uid" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 19531136">
+				</label>
+				<p class="note">The osu! UID is the number in an osu! profile URL. Leave it empty to unlink the account.</p>
+			</div>
+			<div class="card-actions">
+				<button class="button" disabled id="update-admin-identifiers" onclick="submitAdminIdentifiers()">Save Identifiers</button>
+			</div>
+			<script>
+				let savedAdminWatiam = {{ watiamJson }};
+				let savedAdminOsuUid = {{ osuAccountJson }};
+				const adminWatiamInput = document.querySelector('#admin-watiam');
+				const adminOsuUidInput = document.querySelector('#admin-osu-uid');
+				const adminIdentifiersButton = document.querySelector('#update-admin-identifiers');
+				adminWatiamInput.value = savedAdminWatiam;
+				adminOsuUidInput.value = savedAdminOsuUid;
+
+				function updateAdminIdentifiersButton() {
+					const watiam = adminWatiamInput.value.trim().toLowerCase();
+					const osuUid = adminOsuUidInput.value.trim();
+					const validWatiam = /^[a-z][a-z0-9]{2,7}$/.test(watiam);
+					const validOsuUid = osuUid === '' || /^\d+$/.test(osuUid);
+					adminWatiamInput.classList.toggle('error', watiam !== '' && !validWatiam);
+					adminOsuUidInput.classList.toggle('error', !validOsuUid);
+					adminIdentifiersButton.disabled = !validWatiam || !validOsuUid ||
+						(watiam === savedAdminWatiam && osuUid === savedAdminOsuUid);
+				}
+
+				adminWatiamInput.addEventListener('input', updateAdminIdentifiersButton);
+				adminOsuUidInput.addEventListener('input', updateAdminIdentifiersButton);
+				updateAdminIdentifiersButton();
+
+				async function submitAdminIdentifiers() {
+					const watiam = adminWatiamInput.value.trim().toLowerCase();
+					const osuUid = adminOsuUidInput.value.trim();
+					adminIdentifiersButton.disabled = true;
+					adminIdentifiersButton.classList.add('loading');
+					adminWatiamInput.disabled = true;
+					adminOsuUidInput.disabled = true;
+					try {
+						const response = await fetch('{{ membershipManagementBaseUrl }}/update-admin-identifiers', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({ token, watiam, osuUid }),
+						});
+						const json = await response.json();
+						if (!response.ok || json.status !== 'success') throw new Error(json.message || 'Could not save identifiers.');
+						savedAdminWatiam = json.watiam;
+						savedAdminOsuUid = json.osuUid;
+						adminWatiamInput.value = savedAdminWatiam;
+						adminOsuUidInput.value = savedAdminOsuUid;
+						document.querySelector('#managed-watiam').textContent = savedAdminWatiam;
+						osuAccount = savedAdminOsuUid;
+						websiteOsuUsername = json.osuUsername || '';
+						updateOsuAccountDisplay();
+						updateWebsiteOsuUsernameDisplay();
+					} catch (error) {
+						console.error(error);
+						alert(error.message || 'An error occurred. Please try again later.');
+					} finally {
+						adminWatiamInput.disabled = false;
+						adminOsuUidInput.disabled = false;
+						adminIdentifiersButton.classList.remove('loading');
+						updateAdminIdentifiersButton();
+					}
+				}
+			</script>
 		</div>
 
 		<div id="osu-account" class="card">
@@ -49,7 +128,7 @@
 			<div class="card-body">
 				<p class="linked-osu-account"></p>
 			</div>
-			<div class="card-actions">
+			<div class="card-actions {{ memberOnlyClass }}">
 				<button class="button danger" id="unlink-osu-account" onclick="unlinkOsuAccount()">Unlink osu! Account</button>
 				<a href="{{ membershipManagementBaseUrl }}/link-osu-account" class="button" id="link-osu-account">Link osu! Account</a>
 			</div>			
@@ -63,7 +142,7 @@
 					} else {
 						document.querySelector('.linked-osu-account').innerHTML = `You do not have an osu! account linked yet. Link your osu! account here!`;
 						document.querySelector('#unlink-osu-account').classList.add('hide');
-						document.querySelector('#link-osu-account').classList.remove('hide');
+						document.querySelector('#link-osu-account').classList.toggle('hide', isAdminMode);
 					}
 				};
 				updateOsuAccountDisplay();
