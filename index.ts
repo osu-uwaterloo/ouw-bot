@@ -35,7 +35,7 @@ import Logger from './logging';
 import * as utils from './utils';
 import { DateTime } from 'luxon';
 import speakeasy from 'speakeasy';
-import { buildPublicMemberSnapshot, enrichOsuUsernames, pushPublicMemberSnapshot } from './public-members.js';
+import { buildPublicMemberSnapshot, enrichOsuUsernames, getOsuUsername, pushPublicMemberSnapshot } from './public-members.js';
 
 type BotInteraction =
     ButtonInteraction |
@@ -760,6 +760,19 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, re
         osuAccountId = rawOsu.match(/\d+/)[0];
     }
 
+    let osuUsername = '';
+    if (osuAccountId) {
+        try {
+            osuUsername = await getOsuUsername(
+                Number(osuAccountId),
+                env.OSU_CLIENT_ID.toString(),
+                env.OSU_CLIENT_SECRET,
+            ) ?? '';
+        } catch (error) {
+            console.warn(`Could not load osu! username for ${osuAccountId}:`, error);
+        }
+    }
+
     // Generate social links json
     const socialLinksInSheetJson = (() => {
         const raw = row.get('social_links');
@@ -807,10 +820,62 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, re
         watiam: row.get('watiam') ?? 'Unknown',
         osuAccount: osuAccountId,
         displayOnWebsite: utils.parseHumanBool(row.get('display_on_website'), false),
+        osuUsername: JSON.stringify(osuUsername).replace(/</g, '\\u003c'),
         name: JSON.stringify((socialLinksInSheetJson.name ?? '').toString()).replace(/</g, '\\u003c'),
         bio: JSON.stringify((socialLinksInSheetJson.bio ?? '').toString()).replace(/</g, '\\u003c'),
         socialMedia: JSON.stringify(socialLinks)
     }));
+});
+
+// Refresh the osu! username used as the primary website name
+app.post('/membership/:encryptedUserIdAndExpiry/refresh-osu-username', async (req: express.Request, res: express.Response): Promise<any> => {
+    const reqData = await getDataByEncryptedUserIdAndExpiry(req.params.encryptedUserIdAndExpiry, res);
+    if (!reqData) return;
+    const { row } = reqData;
+
+    const rawOsu = (row.get('osu') ?? '').trim();
+    const osuAccountId = rawOsu.match(/^\d+$/)?.[0] ?? rawOsu.match(/osu\.ppy\.sh\/users\/(\d+)/i)?.[1];
+    if (!osuAccountId) {
+        return res.status(400).send({ status: 'error', message: 'No osu! account is linked.' });
+    }
+
+    try {
+        const username = await getOsuUsername(
+            Number(osuAccountId),
+            env.OSU_CLIENT_ID.toString(),
+            env.OSU_CLIENT_SECRET,
+            true,
+        );
+        if (!username) {
+            return res.status(404).send({ status: 'error', message: 'Could not find the linked osu! account.' });
+        }
+        schedulePublicMembersSync('osu! username refreshed');
+        return res.send({ status: 'success', username });
+    } catch (error) {
+        console.error(`Could not refresh osu! username for ${osuAccountId}:`, error);
+        return res.status(502).send({ status: 'error', message: 'Could not refresh the osu! username. Please try again later.' });
+    }
+});
+
+// Refresh the Discord username stored in the membership database
+app.post('/membership/:encryptedUserIdAndExpiry/refresh-discord-username', async (req: express.Request, res: express.Response): Promise<any> => {
+    const reqData = await getDataByEncryptedUserIdAndExpiry(req.params.encryptedUserIdAndExpiry, res);
+    if (!reqData) return;
+    const { userId, row } = reqData;
+
+    try {
+        const guild = await client.guilds.fetch(env.SERVER_ID);
+        const member = await guild.members.fetch(userId);
+        const username = member.user.username;
+        if (row.get('discord_username') !== username) {
+            await sheet.updateRow(row, { discord_username: username });
+            schedulePublicMembersSync('Discord username refreshed');
+        }
+        return res.send({ status: 'success', username });
+    } catch (error) {
+        console.error(`Could not refresh Discord username for ${userId}:`, error);
+        return res.status(502).send({ status: 'error', message: 'Could not refresh the Discord username. Please try again later.' });
+    }
 });
 
 // link osu account oauth redirect
@@ -2247,8 +2312,18 @@ client.on('guildMemberUpdate', (oldMember, newMember) => {
     if (categoryChanged) schedulePublicMembersSync('Discord role updated');
 });
 
-client.on('userUpdate', (oldUser, newUser) => {
-    if (oldUser.username !== newUser.username) schedulePublicMembersSync('Discord username updated');
+client.on('userUpdate', async (oldUser, newUser) => {
+    if (oldUser.username === newUser.username) return;
+
+    try {
+        const row = await sheet.findRowByKeyValue('discord_id', newUser.id);
+        if (row && row.get('discord_username') !== newUser.username) {
+            await sheet.updateRow(row, { discord_username: newUser.username });
+        }
+    } catch (error) {
+        console.error(`Could not update stored Discord username for ${newUser.id}:`, error);
+    }
+    schedulePublicMembersSync('Discord username updated');
 });
 
 client.once('ready', () => {

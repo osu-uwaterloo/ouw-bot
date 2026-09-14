@@ -160,6 +160,53 @@ async function getOsuAccessToken(clientId: string, clientSecret: string): Promis
     return data.access_token;
 }
 
+async function refreshOsuUsernames(
+    userIds: number[],
+    clientId: string,
+    clientSecret: string,
+): Promise<void> {
+    const now = Date.now();
+    if (userIds.length === 0) return;
+
+    const accessToken = await getOsuAccessToken(clientId, clientSecret);
+    for (let offset = 0; offset < userIds.length; offset += 50) {
+        const ids = userIds.slice(offset, offset + 50);
+        const url = new URL('https://osu.ppy.sh/api/v2/users');
+        for (const id of ids) url.searchParams.append('ids[]', id.toString());
+
+        const response = await fetch(url, {
+            headers: {
+                'Accept': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+            },
+            signal: AbortSignal.timeout(10_000),
+        });
+        if (!response.ok) throw new Error(`osu! users request returned ${response.status}`);
+
+        const data = await response.json() as { users?: { id?: number; username?: string }[] };
+        for (const user of data.users ?? []) {
+            if (!Number.isSafeInteger(user.id) || !user.username) continue;
+            osuUsernameCache.set(user.id!, {
+                username: user.username,
+                expiresAt: now + OSU_USERNAME_CACHE_MS,
+            });
+        }
+    }
+}
+
+export async function getOsuUsername(
+    userId: number,
+    clientId: string,
+    clientSecret: string,
+    forceRefresh = false,
+): Promise<string | null> {
+    const cached = osuUsernameCache.get(userId);
+    if (forceRefresh || !cached || cached.expiresAt <= Date.now()) {
+        await refreshOsuUsernames([userId], clientId, clientSecret);
+    }
+    return osuUsernameCache.get(userId)?.username ?? null;
+}
+
 export async function enrichOsuUsernames(
     snapshot: PublicMemberSnapshot,
     clientId: string,
@@ -170,30 +217,7 @@ export async function enrichOsuUsernames(
     const missingIds = userIds.filter(userId => (osuUsernameCache.get(userId)?.expiresAt ?? 0) <= now);
 
     if (missingIds.length > 0) {
-        const accessToken = await getOsuAccessToken(clientId, clientSecret);
-        for (let offset = 0; offset < missingIds.length; offset += 50) {
-            const ids = missingIds.slice(offset, offset + 50);
-            const url = new URL('https://osu.ppy.sh/api/v2/users');
-            for (const id of ids) url.searchParams.append('ids[]', id.toString());
-
-            const response = await fetch(url, {
-                headers: {
-                    'Accept': 'application/json',
-                    'Authorization': `Bearer ${accessToken}`,
-                },
-                signal: AbortSignal.timeout(10_000),
-            });
-            if (!response.ok) throw new Error(`osu! users request returned ${response.status}`);
-
-            const data = await response.json() as { users?: { id?: number; username?: string }[] };
-            for (const user of data.users ?? []) {
-                if (!Number.isSafeInteger(user.id) || !user.username) continue;
-                osuUsernameCache.set(user.id!, {
-                    username: user.username,
-                    expiresAt: now + OSU_USERNAME_CACHE_MS,
-                });
-            }
-        }
+        await refreshOsuUsernames(missingIds, clientId, clientSecret);
     }
 
     return {
