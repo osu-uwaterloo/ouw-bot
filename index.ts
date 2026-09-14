@@ -620,43 +620,115 @@ async function addMissingFieldsToLegacyRow(member: GuildMember, row: GoogleSprea
     }
 }
 
+type AdminMembershipSession = {
+    actorId: string;
+    targetId: string | null;
+    expiresAt: number;
+};
+
+const adminMembershipSessions = new Map<string, AdminMembershipSession>();
+const ADMIN_MEMBERSHIP_SESSION_TTL = 30 * 60 * 1000;
+
+function createAdminMembershipSession(actorId: string, targetId: string | null, expiresAt = Date.now() + ADMIN_MEMBERSHIP_SESSION_TTL) {
+    for (const [existingToken, session] of adminMembershipSessions) {
+        if (session.expiresAt <= Date.now()) adminMembershipSessions.delete(existingToken);
+    }
+    const token = generateRandomToken(32);
+    adminMembershipSessions.set(token, { actorId, targetId, expiresAt });
+    return token;
+}
+
+function createAdminMembershipUrl(actorId: string, selectedMemberId?: string) {
+    const token = createAdminMembershipSession(actorId, null);
+    const url = new URL(`${env.URL}/membership-admin/${token}`);
+    if (selectedMemberId) url.searchParams.set('member', selectedMemberId);
+    return url.toString();
+}
+
+async function validateAdminMembershipSession(token: string | undefined, res: express.Response) {
+    const session = token ? adminMembershipSessions.get(token) : null;
+    if (!session || session.expiresAt <= Date.now()) {
+        if (token) adminMembershipSessions.delete(token);
+        res.status(401).send(getTemplate('error', { message: 'This admin membership link is invalid or has expired. Open the admin menu from Discord again.' }));
+        return null;
+    }
+
+    try {
+        const guild = await client.guilds.fetch(env.SERVER_ID);
+        const actor = await guild.members.fetch(session.actorId);
+        if (!actor.permissions.has(PermissionFlagsBits.Administrator)) {
+            adminMembershipSessions.delete(token!);
+            res.status(403).send(getTemplate('error', { message: 'You no longer have permission to manage memberships.' }));
+            return null;
+        }
+        return { session, actor };
+    } catch (error) {
+        console.error(`Could not validate membership administrator ${session.actorId}:`, error);
+        res.status(403).send(getTemplate('error', { message: 'Could not confirm your Discord administrator access.' }));
+        return null;
+    }
+}
+
 // Manage membership slash command callback
 const onManageMembership = async (interaction: ChatInputCommandInteraction | ButtonInteraction) => {
-    // Check if the user has the verified role
-    const roles = (interaction.member!.roles as GuildMemberRoleManager).cache;
+    const member = interaction.member as GuildMember;
+    const roles = member.roles.cache;
     const isVerified = roles.has(env.ROLE_ID.VERIFIED);
     const isCurrentUWStudent = roles.has(env.ROLE_ID.CURRENT_UW_STUDENT);
-    if (!isCurrentUWStudent || !isVerified) {
+    const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+    if ((!isCurrentUWStudent || !isVerified) && !isAdmin) {
         await interaction.reply({
             content: 'You need to be a verified current UW student to manage your membership.',
             ephemeral: true
         });
         return;
     }
-    // Check if the user has a verified WatIAM in the sheet
-    await addMissingFieldsToLegacyRow(interaction.member as GuildMember);
-    const userId = (interaction.member as GuildMember).id;
-    const row = await sheet.findRowByKeyValue('discord_id', userId);
-    if (!row) {
+
+    const buttons: ButtonBuilder[] = [];
+    let selfServiceExpiry: number | null = null;
+    if (isCurrentUWStudent && isVerified) {
+        await addMissingFieldsToLegacyRow(member);
+        const row = await sheet.findRowByKeyValue('discord_id', member.id);
+        if (row) {
+            selfServiceExpiry = Date.now() + 12 * 60 * 60 * 1000;
+            const key = `${member.id}-${selfServiceExpiry}`;
+            buttons.push(new ButtonBuilder()
+                .setURL(`${env.URL}/membership/${encryptUserId(key)}`)
+                .setLabel('Manage My Membership')
+                .setStyle(ButtonStyle.Link));
+        } else if (!isAdmin) {
+            await interaction.reply({
+                content: 'Please contact the club executives to get your data migrated. Your record has an outdated Discord username.',
+                ephemeral: true
+            });
+            return;
+        }
+    }
+
+    if (isAdmin) {
+        buttons.push(new ButtonBuilder()
+            .setURL(createAdminMembershipUrl(member.id))
+            .setLabel('Admin: Manage Members')
+            .setStyle(ButtonStyle.Link));
+    }
+
+    if (buttons.length === 0) {
         await interaction.reply({
-            content: 'Please contact the club executives to get your data migrated. You have record with outdated discord username.',
+            content: 'No membership management options are available for your account.',
             ephemeral: true
         });
         return;
     }
-    // Send the user a link to manage their membership
-    const expiry = Date.now() + 12 * 60 * 60 * 1000;
-    const key = `${userId}-${expiry}`;
-    const link = `${env.URL}/membership/${encryptUserId(key)}`;
+
     const embed = new EmbedBuilder()
         .setColor('#5865f2')
         .setTitle('Manage Membership')
-        .setDescription(`Click the button below to manage your membership. This link will expire <t:${Math.floor(expiry / 1000)}:R>.`);
-    const manageButton = new ButtonBuilder()
-        .setURL(link)
-        .setLabel('Manage Membership')
-        .setStyle(ButtonStyle.Link);
-    const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(manageButton);
+        .setDescription([
+            'Choose an option below.',
+            selfServiceExpiry ? `Your personal membership link expires <t:${Math.floor(selfServiceExpiry / 1000)}:R>.` : '',
+            isAdmin ? 'Administrator access expires after 30 minutes.' : '',
+        ].filter(Boolean).join('\n'));
+    const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons);
     await interaction.reply({
         embeds: [embed],
         components: [actionRow],
@@ -667,6 +739,27 @@ const onManageMembership = async (interaction: ChatInputCommandInteraction | But
 
 // Membership management routes
 const getDataByEncryptedUserIdAndExpiry = async (encryptedUserIdAndExpiry: string | undefined, res: express.Response) => {
+    const adminAccess = encryptedUserIdAndExpiry ? adminMembershipSessions.get(encryptedUserIdAndExpiry) : null;
+    if (adminAccess) {
+        const validated = await validateAdminMembershipSession(encryptedUserIdAndExpiry, res);
+        if (!validated) return null;
+        if (!validated.session.targetId) {
+            res.status(400).send(getTemplate('error', { message: 'No member was selected for this admin link.' }));
+            return null;
+        }
+        const row = await sheet.findRowByKeyValue('discord_id', validated.session.targetId);
+        if (!row) {
+            res.status(404).send(getTemplate('error', { message: 'The selected user does not have a membership record.' }));
+            return null;
+        }
+        return {
+            userId: validated.session.targetId,
+            expiry: validated.session.expiresAt,
+            row,
+            adminActorId: validated.session.actorId,
+        };
+    }
+
     const userIdAndExpiry = decryptUserId(encryptedUserIdAndExpiry);
     if (!userIdAndExpiry) {
         res.send(getTemplate('error', { message: 'Invalid membership management link. It may be corrupted. Please use <code>/manage_membership</code> in the server to get a new link.' }));
@@ -690,8 +783,69 @@ const getDataByEncryptedUserIdAndExpiry = async (encryptedUserIdAndExpiry: strin
         res.send(getTemplate('error', { message: 'User not found in the database. Please contact the club executives to get your data migrated.' }));
         return null;
     }
-    return { userId, expiry, row };
+    return { userId, expiry, row, adminActorId: null };
 }
+
+app.get('/membership-admin/:adminToken', async (req: express.Request, res: express.Response): Promise<any> => {
+    const validated = await validateAdminMembershipSession(req.params.adminToken, res);
+    if (!validated) return;
+
+    const [rows, guild] = await Promise.all([
+        sheet.getAllRows(),
+        client.guilds.fetch(env.SERVER_ID),
+    ]);
+    const guildMembers = await guild.members.fetch();
+    const alumniRoleId = env.ALUMNI_ROLE_ID ?? env.SKIP_ROLE_IDS?.[0];
+
+    const members = rows.map((row, index) => {
+        const discordId = String(row.get('discord_id') ?? '').trim();
+        const guildMember = discordId ? guildMembers.get(discordId) : null;
+        const storedDiscordUsername = String(row.get('discord_username') ?? '').trim();
+        const rawOsu = String(row.get('osu') ?? '').trim();
+        const osuAccountId = rawOsu.match(/^\d+$/)?.[0] ?? rawOsu.match(/osu\.ppy\.sh\/users\/(\d+)/i)?.[1] ?? '';
+        let profile: Record<string, unknown> = {};
+        try {
+            const parsed = JSON.parse(String(row.get('social_links') ?? '{}'));
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) profile = parsed;
+        } catch {}
+
+        let category = 'Other';
+        if (guildMember?.roles.cache.has(env.EXEC_ROLE_ID)) category = 'Executive';
+        else if (alumniRoleId && guildMember?.roles.cache.has(alumniRoleId)) category = 'Alumni';
+        else if (guildMember?.roles.cache.has(env.ROLE_ID.CURRENT_UW_STUDENT)) category = 'Current Student';
+        else if (guildMember?.roles.cache.has(env.ROLE_ID.VERIFIED)) category = 'Verified';
+
+        const editToken = discordId
+            ? createAdminMembershipSession(validated.session.actorId, discordId, validated.session.expiresAt)
+            : null;
+        return {
+            id: discordId || `legacy-${index}`,
+            discordId,
+            displayName: guildMember?.displayName ?? (storedDiscordUsername || 'Unknown user'),
+            discordUsername: guildMember?.user.username ?? (storedDiscordUsername || 'Unknown user'),
+            globalName: guildMember?.user.globalName ?? '',
+            storedDiscordUsername,
+            additionalName: typeof profile.name === 'string' ? profile.name : '',
+            watiam: String(row.get('watiam') ?? '').trim(),
+            osuAccountId,
+            category,
+            inServer: Boolean(guildMember),
+            displayOnWebsite: utils.parseHumanBool(row.get('display_on_website'), false),
+            hasBio: typeof profile.bio === 'string' && profile.bio.trim().length > 0,
+            editUrl: editToken ? `${env.URL}/membership/${editToken}?admin=1&embed=1` : null,
+        };
+    }).sort((left, right) => left.discordUsername.localeCompare(right.discordUsername));
+
+    res.set({
+        'Cache-Control': 'no-store',
+        'Content-Security-Policy': "frame-ancestors 'self'",
+        'Referrer-Policy': 'no-referrer',
+    });
+    res.send(getTemplate('membership-admin', {
+        adminUsername: escapeHtml(validated.actor.user.username),
+        members: JSON.stringify(members).replace(/</g, '\\u003c'),
+    }));
+});
 
 // Member social media related types and constants
 // TODO: move these to a separate file
@@ -749,7 +903,7 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, re
     
     const reqData = await getDataByEncryptedUserIdAndExpiry(encryptedUserIdAndExpiry, res);
     if (!reqData) return;
-    const { userId, expiry, row } = reqData;
+    const { userId, expiry, row, adminActorId } = reqData;
 
     // Get the osu account id
     const rawOsu = (row.get('osu') ?? '').trim();
@@ -811,8 +965,18 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, re
     });
     
 
+    res.set({
+        'Cache-Control': 'no-store',
+        'Content-Security-Policy': "frame-ancestors 'self'",
+        'Referrer-Policy': 'no-referrer',
+        'X-Frame-Options': 'SAMEORIGIN',
+    });
+
     // Send the membership management page
     res.send(getTemplate('membership', {
+        bodyClass: req.query.embed === '1' ? 'embed-mode' : '',
+        adminBannerClass: adminActorId ? '' : 'hide',
+        adminTarget: escapeHtml(String(row.get('discord_username') ?? userId)),
         token: encryptedUserIdAndExpiry,
         membershipManagementBaseUrl: `${env.URL}/membership/${encryptedUserIdAndExpiry}`,
         discordId: userId,
@@ -1814,6 +1978,14 @@ client.once('ready', async () => {
                 .setContexts(InteractionContextType.Guild)
                 .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
         ),
+        guild.commands.create(
+            new ContextMenuCommandBuilder()
+                .setName('manage_member_membership')
+                .setNameLocalization('en-US', 'Manage Membership')
+                .setType(ApplicationCommandType.User as ContextMenuCommandType)
+                .setContexts(InteractionContextType.Guild)
+                .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        ),
         // For message context menu
         guild.commands.create(
             new ContextMenuCommandBuilder()
@@ -1896,6 +2068,42 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
     const member = interaction.member as GuildMember;
+    const targetGuildMember = targetMember as GuildMember;
+
+    if (commandName === 'manage_member_membership') {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+            await interaction.reply({
+                content: 'You need the Administrator permission to manage another member.',
+                ephemeral: true
+            });
+            return;
+        }
+
+        await addMissingFieldsToLegacyRow(targetGuildMember);
+        const row = await sheet.findRowByKeyValue('discord_id', targetGuildMember.id);
+        if (!row) {
+            await interaction.reply({
+                content: 'This user does not have a membership record yet.',
+                ephemeral: true
+            });
+            return;
+        }
+
+        const embed = new EmbedBuilder()
+            .setColor('#e8ca21')
+            .setTitle('Manage Membership')
+            .setDescription(`Open the membership admin page with **${targetGuildMember.user.username}** selected. Administrator access expires after 30 minutes.`)
+            .setThumbnail(targetGuildMember.user.displayAvatarURL())
+            .setFooter({ text: `Discord ID: ${targetGuildMember.id}` });
+        const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+                .setURL(createAdminMembershipUrl(member.id, targetGuildMember.id))
+                .setLabel('Open Member Settings')
+                .setStyle(ButtonStyle.Link)
+        );
+        await interaction.reply({ embeds: [embed], components: [actionRow], ephemeral: true });
+        return;
+    }
 
     if (commandName === 'give_verified_role' || commandName === 'give_verified_uw_student_role') {
         const roleIds = [env.ROLE_ID.VERIFIED];

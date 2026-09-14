@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Manage Members · osu!uwaterloo</title>
+	<link rel="stylesheet" href="../static/css/style.css">
+</head>
+<body class="admin-directory-body">
+	<main class="admin-membership-shell">
+		<aside class="admin-member-sidebar" aria-label="Member directory">
+			<header class="admin-directory-header">
+				<div>
+					<p class="admin-eyebrow">Membership administration</p>
+					<h1>Manage Members</h1>
+					<p class="admin-signed-in">Signed in as <strong>{{ adminUsername }}</strong></p>
+				</div>
+				<button class="admin-icon-button" id="refresh-directory" type="button" title="Refresh member list" aria-label="Refresh member list">↻</button>
+			</header>
+
+			<div class="admin-directory-tools">
+				<label class="admin-search">
+					<span class="visually-hidden">Search members</span>
+					<input id="member-search" type="search" placeholder="Search name, WatIAM, Discord, osu!…" autocomplete="off">
+				</label>
+				<div class="admin-filter-row">
+					<label>
+						<span>Membership</span>
+						<select id="category-filter">
+							<option value="">All roles</option>
+							<option>Executive</option>
+							<option>Current Student</option>
+							<option>Alumni</option>
+							<option>Verified</option>
+							<option>Other</option>
+						</select>
+					</label>
+					<label>
+						<span>Status</span>
+						<select id="status-filter">
+							<option value="">All members</option>
+							<option value="server">In server</option>
+							<option value="left">Left server</option>
+							<option value="website">On website</option>
+							<option value="legacy">Needs migration</option>
+						</select>
+					</label>
+				</div>
+				<p class="admin-result-count" id="result-count" aria-live="polite"></p>
+				<p class="admin-migration-note hide" id="migration-note">
+					<strong>Needs migration?</strong> This record has no Discord ID, so it cannot be opened here. If its saved username still matches, right-click the user in Discord and choose <strong>Apps → Manage Membership</strong> to migrate it automatically.
+				</p>
+			</div>
+
+			<div class="admin-member-list" id="member-list"></div>
+			<div class="admin-empty-results hide" id="empty-results">
+				<strong>No members found</strong>
+				<span>Try a different search or filter.</span>
+			</div>
+		</aside>
+
+		<section class="admin-member-editor" aria-label="Membership editor">
+			<div class="admin-editor-toolbar">
+				<button class="admin-back-button" id="back-to-members" type="button">← Members</button>
+				<span id="editor-title">Member settings</span>
+			</div>
+			<div class="admin-editor-placeholder" id="editor-placeholder">
+				<div>
+					<strong>Select a member</strong>
+					<p>Search or browse the directory, then select someone to edit their membership.</p>
+				</div>
+			</div>
+			<iframe id="membership-editor" title="Member membership settings" class="hide"></iframe>
+		</section>
+	</main>
+
+	<script>
+		const members = {{ members }};
+		const searchInput = document.getElementById('member-search');
+		const categoryFilter = document.getElementById('category-filter');
+		const statusFilter = document.getElementById('status-filter');
+		const memberList = document.getElementById('member-list');
+		const emptyResults = document.getElementById('empty-results');
+		const resultCount = document.getElementById('result-count');
+		const editor = document.getElementById('membership-editor');
+		const editorPlaceholder = document.getElementById('editor-placeholder');
+		const editorTitle = document.getElementById('editor-title');
+		let selectedMemberId = null;
+		document.getElementById('migration-note').classList.toggle('hide', !members.some(member => !member.discordId));
+
+		function searchableText(member) {
+			return [member.displayName, member.discordUsername, member.globalName, member.storedDiscordUsername, member.additionalName, member.watiam, member.discordId, member.osuAccountId]
+				.filter(Boolean)
+				.join(' ')
+				.toLocaleLowerCase();
+		}
+
+		function matchesStatus(member, status) {
+			if (status === 'server') return member.inServer;
+			if (status === 'left') return !member.inServer && Boolean(member.discordId);
+			if (status === 'website') return member.displayOnWebsite;
+			if (status === 'legacy') return !member.discordId;
+			return true;
+		}
+
+		function addBadge(container, label, className = '') {
+			const badge = document.createElement('span');
+			badge.className = `admin-member-badge ${className}`.trim();
+			badge.textContent = label;
+			container.appendChild(badge);
+		}
+
+		function createMemberRow(member) {
+			const button = document.createElement('button');
+			button.type = 'button';
+			button.className = 'admin-member-row';
+			button.dataset.memberId = member.discordId;
+			button.disabled = !member.editUrl;
+			if (member.discordId === selectedMemberId) button.classList.add('selected');
+
+			const heading = document.createElement('span');
+			heading.className = 'admin-member-heading';
+			const username = document.createElement('strong');
+			username.textContent = member.displayName;
+			heading.appendChild(username);
+			if (member.discordUsername && member.discordUsername !== member.displayName) {
+				const name = document.createElement('span');
+				name.textContent = member.discordUsername;
+				heading.appendChild(name);
+			}
+			button.appendChild(heading);
+
+			const metadata = document.createElement('span');
+			metadata.className = 'admin-member-metadata';
+			const metadataParts = [];
+			if (member.additionalName && member.additionalName !== member.displayName) metadataParts.push(member.additionalName);
+			if (member.watiam) metadataParts.push(member.watiam);
+			if (member.osuAccountId) metadataParts.push(`osu! ${member.osuAccountId}`);
+			if (metadataParts.length === 0 && member.discordId) metadataParts.push(member.discordId);
+			metadata.textContent = metadataParts.join(' · ');
+			button.appendChild(metadata);
+
+			const badges = document.createElement('span');
+			badges.className = 'admin-member-badges';
+			addBadge(badges, member.category, `category-${member.category.toLowerCase().replaceAll(' ', '-')}`);
+			if (member.displayOnWebsite) addBadge(badges, 'Website', 'positive');
+			if (member.hasBio) addBadge(badges, 'Bio');
+			if (!member.inServer && member.discordId) addBadge(badges, 'Left server', 'muted');
+			if (!member.discordId) addBadge(badges, 'Needs migration', 'warning');
+			button.appendChild(badges);
+
+			if (member.editUrl) button.addEventListener('click', () => openMember(member));
+			return button;
+		}
+
+		function renderMembers() {
+			const query = searchInput.value.trim().toLocaleLowerCase();
+			const category = categoryFilter.value;
+			const status = statusFilter.value;
+			const filtered = members.filter(member =>
+				(!query || searchableText(member).includes(query)) &&
+				(!category || member.category === category) &&
+				matchesStatus(member, status)
+			);
+
+			memberList.replaceChildren(...filtered.map(createMemberRow));
+			resultCount.textContent = `${filtered.length} of ${members.length} member${members.length === 1 ? '' : 's'}`;
+			emptyResults.classList.toggle('hide', filtered.length !== 0);
+		}
+
+		function openMember(member) {
+			if (!member.editUrl) return;
+			selectedMemberId = member.discordId;
+			editor.src = member.editUrl;
+			editor.classList.remove('hide');
+			editorPlaceholder.classList.add('hide');
+			editorTitle.textContent = `Editing ${member.discordUsername}`;
+			document.body.classList.add('editor-open');
+			const url = new URL(window.location.href);
+			url.searchParams.set('member', member.discordId);
+			history.replaceState(null, '', url);
+			renderMembers();
+		}
+
+		function closeEditorOnMobile() {
+			document.body.classList.remove('editor-open');
+		}
+
+		searchInput.addEventListener('input', renderMembers);
+		categoryFilter.addEventListener('change', renderMembers);
+		statusFilter.addEventListener('change', renderMembers);
+		document.getElementById('refresh-directory').addEventListener('click', () => location.reload());
+		document.getElementById('back-to-members').addEventListener('click', closeEditorOnMobile);
+
+		renderMembers();
+		const initialMemberId = new URLSearchParams(window.location.search).get('member');
+		const initialMember = members.find(member => member.discordId === initialMemberId && member.editUrl);
+		if (initialMember) openMember(initialMember);
+		searchInput.focus();
+	</script>
+</body>
+</html>
