@@ -1041,6 +1041,7 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, re
         membershipManagementBaseUrl: `${env.URL}/membership/${encryptedUserIdAndExpiry}`,
         discordId: userId,
         discordUsername: row.get('discord_username'),
+        discordUsernameJson: JSON.stringify(String(row.get('discord_username') ?? '')).replace(/</g, '\\u003c'),
         watiam: escapeHtml(String(row.get('watiam') ?? 'Unknown')),
         watiamJson: JSON.stringify(String(row.get('watiam') ?? '')).replace(/</g, '\\u003c'),
         osuAccount: osuAccountId,

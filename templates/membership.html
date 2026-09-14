@@ -198,14 +198,15 @@
 			</div>
 			<script>
 				let websiteOsuUsername = {{ osuUsername }};
+				const websiteDiscordUsername = {{ discordUsernameJson }};
 				const refreshOsuUsernameButton = document.querySelector('#refresh-osu-username');
 				const updateWebsiteOsuUsernameDisplay = () => {
 					document.querySelector('#website-osu-username').value = osuAccount
 						? websiteOsuUsername || 'Unavailable'
-						: 'No osu! account linked';
+						: websiteDiscordUsername || 'Discord username unavailable';
 					document.querySelector('#website-name-help').textContent = osuAccount
 						? 'Synced from your linked osu! account.'
-						: 'Link an osu! account above to set your name.';
+						: 'No osu! account linked; using your Discord username.';
 					refreshOsuUsernameButton.disabled = !osuAccount;
 				};
 				updateWebsiteOsuUsernameDisplay();
