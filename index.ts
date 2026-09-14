@@ -103,11 +103,16 @@ async function syncPublicMembersNow(reason: string): Promise<void> {
     try {
         do {
             publicMembersSyncRequested = false;
-            const guild = await client.guilds.fetch(env.SERVER_ID);
-            const [rows, discordMembers] = await Promise.all([
-                sheet.getAllRows(),
-                guild.members.fetch(),
-            ]);
+            const guild = client.guilds.cache.get(env.SERVER_ID) ?? await client.guilds.fetch(env.SERVER_ID);
+            if (guild.members.cache.size < guild.memberCount) {
+                try {
+                    await guild.members.fetch({ time: 10_000 });
+                } catch (error) {
+                    if (guild.members.cache.size < guild.memberCount) throw error;
+                }
+            }
+            const rows = await sheet.getAllRows();
+            const discordMembers = guild.members.cache;
             const profiles = new Map(Array.from(discordMembers.values(), member => [
                 member.id,
                 {
