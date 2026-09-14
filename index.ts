@@ -1334,6 +1334,51 @@ app.post('/membership/:encryptedUserIdAndExpiry/unlink-osu-account', async (req:
 });
 
 // Update display on website status
+app.post('/membership/:encryptedUserIdAndExpiry/update-profile', async (req: express.Request, res: express.Response): Promise<any> => {
+    const reqData = await getDataByEncryptedUserIdAndExpiry(req.params.encryptedUserIdAndExpiry, res);
+    if (!reqData) return;
+    const { row } = reqData;
+
+    const { displayOnWebsite } = req.body;
+    if (typeof displayOnWebsite !== 'boolean') {
+        return res.status(400).send({ status: 'error', message: 'Website visibility must be true or false.' });
+    }
+    if (typeof req.body.name !== 'string' || typeof req.body.program !== 'string' || typeof req.body.bio !== 'string') {
+        return res.status(400).send({ status: 'error', message: 'Name, program, and bio must be text.' });
+    }
+
+    const name = req.body.name.trim();
+    const program = req.body.program.trim();
+    const bio = req.body.bio.trim();
+    if (name.length > 20) {
+        return res.status(400).send({ status: 'error', message: 'Name must be 20 characters or fewer.' });
+    }
+    if (program.length > 100) {
+        return res.status(400).send({ status: 'error', message: 'Program must be 100 characters or fewer.' });
+    }
+    if (bio.length > 200) {
+        return res.status(400).send({ status: 'error', message: 'Bio must be 200 characters or fewer.' });
+    }
+
+    let socialLinks: Record<string, string> = {};
+    try {
+        const parsed = JSON.parse(row.get('social_links') || '{}');
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) socialLinks = parsed;
+    } catch {}
+    for (const [key, value] of Object.entries({ name, program, bio })) {
+        if (value) socialLinks[key] = value;
+        else delete socialLinks[key];
+    }
+
+    await sheet.updateRow(row, {
+        display_on_website: displayOnWebsite.toString(),
+        social_links: JSON.stringify(socialLinks),
+    });
+    await syncPublicMembersNow('website profile updated');
+    return res.send({ status: 'success' });
+});
+
+// Legacy single-field endpoint retained for existing management links.
 app.post('/membership/:encryptedUserIdAndExpiry/update-display-on-website', async (req: express.Request, res: express.Response): Promise<any> => {
     const encryptedUserIdAndExpiry = req.params.encryptedUserIdAndExpiry;
     

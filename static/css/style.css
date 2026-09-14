@@ -433,6 +433,57 @@ body {
 	font-size: 0.85em;
 }
 
+.profile-section + .profile-section {
+	border-top: 1px solid #ffffff18;
+}
+
+.profile-section-title {
+	padding: 20px 25px 0;
+	color: var(--yellow-1);
+	font-size: 1.05em;
+	font-weight: bold;
+}
+
+.profile-field {
+	display: grid;
+	gap: 6px;
+	margin: 18px 0 8px;
+}
+
+.profile-field-label {
+	color: var(--yellow-1);
+	font-size: 0.85em;
+	font-weight: bold;
+}
+
+.profile-input-row {
+	display: flex;
+	align-items: flex-end;
+	gap: 10px;
+}
+
+.profile-input-row .textfield {
+	min-width: 0;
+	flex: 1;
+}
+
+.profile-field-help {
+	color: var(--gray-2);
+	font-size: 0.8em;
+}
+
+.profile-character-row {
+	display: flex;
+	justify-content: flex-end;
+	padding: 0 25px 14px;
+}
+
+.textfield[readonly] {
+	background-color: #ffffff08;
+	border-bottom-color: var(--gray-1);
+	cursor: default;
+}
+
 .admin-identifier-fields {
 	display: grid;
 	gap: 14px;

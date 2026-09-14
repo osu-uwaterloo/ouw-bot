@@ -176,27 +176,33 @@
 				}
 			</script>
 		</div>
-		<div id="display-on-website" class="card">
-			<div class="card-title">Website Display</div>
+		<div id="website-profile" class="card">
+			<div class="card-title">Website Profile</div>
+			<div id="display-on-website" class="profile-section">
+			<div class="profile-section-title">Visibility and Primary Name</div>
 			<div class="card-body">
 				<p class="linked-website">You can choose whether to display your profile on the club website's <a href="https://osu.uwaterloo.ca/members" target="_blank">member</a> page.</p>
-				<p>Primary name on the member page: <code id="website-osu-username"></code></p>
 				<div class="switch">
 					<input type="checkbox" id="display-on-website-switch">
 					<label for="display-on-website-switch"></label>
 					<label for="display-on-website-switch">Display my profile on club website</label>
 				</div>
-				<p class="note {{ executiveDisplayNoteClass }}">Executive profiles are always listed on the club website. This switch saves your preference for when you no longer have an executive role.</p>
-			</div>
-			<div class="card-actions">
-				<button class="button" id="refresh-osu-username" onclick="refreshOsuUsername()">Refresh osu! Username</button>
-				<button class="button" disabled id="update-display-on-website" onclick="submitDisplayOnWebsite()">Update</button>
+				<p class="note {{ executiveDisplayNoteClass }}">Executive profiles are always listed on the club website. This switch saves your preference for when you no longer have an executive role. You can still leave any optional field empty if you do not want it displayed.</p>
+				<p class="note {{ optionalDisplayNoteClass }}">Additional profile fields are optional. Leave any field empty if you do not want it displayed.</p>
+				<label class="profile-field">
+					<span class="profile-field-label">Primary name</span>
+					<span class="profile-input-row">
+						<input class="textfield big" id="website-osu-username" readonly aria-readonly="true">
+						<span class="inline-icon-button-wrapper" title="Refresh osu! username"><button class="button inline-icon-button" id="refresh-osu-username" onclick="refreshOsuUsername()" type="button" aria-label="Refresh osu! username">↻</button></span>
+					</span>
+					<span class="profile-field-help">This comes from your linked osu! account.</span>
+				</label>
 			</div>
 			<script>
 				let websiteOsuUsername = {{ osuUsername }};
 				const refreshOsuUsernameButton = document.querySelector('#refresh-osu-username');
 				const updateWebsiteOsuUsernameDisplay = () => {
-					document.querySelector('#website-osu-username').textContent = osuAccount
+					document.querySelector('#website-osu-username').value = osuAccount
 						? websiteOsuUsername || 'Unavailable'
 						: 'No osu! account linked';
 					refreshOsuUsernameButton.disabled = !osuAccount;
@@ -231,197 +237,148 @@
 				let displayOnWebsiteNew = displayOnWebsite;
 				document.querySelector('#display-on-website-switch').addEventListener('change', () => {
 					displayOnWebsiteNew = document.querySelector('#display-on-website-switch').checked;
-					updateDisplayOnWebsite();
+					updateWebsiteProfileButton();
 				});
-				const updateDisplayOnWebsite = () => {
-					document.querySelector('#update-display-on-website').disabled = displayOnWebsite === displayOnWebsiteNew;
+				const updateWebsiteProfileButton = () => {
+					const changedField = ['member-name', 'member-program', 'member-bio'].some(id => {
+						const input = document.getElementById(id);
+						return input && input.value.trim() !== input.dataset.saved;
+					});
+					const button = document.querySelector('#update-website-profile');
+					if (button) button.disabled = displayOnWebsite === displayOnWebsiteNew && !changedField;
 				};
 				
-				async function submitDisplayOnWebsite() {
-					document.querySelector('#update-display-on-website').disabled = true;
-					document.querySelector('#update-display-on-website').classList.add('loading');
-					document.querySelector('#display-on-website-switch').disabled = true;
+				async function submitWebsiteProfile() {
+					const button = document.querySelector('#update-website-profile');
+					const controls = [
+						document.querySelector('#display-on-website-switch'),
+						document.querySelector('#member-name'),
+						document.querySelector('#member-program'),
+						document.querySelector('#member-bio'),
+					];
+					button.disabled = true;
+					button.classList.add('loading');
+					controls.forEach(control => control.disabled = true);
 					try {
-						const response = await fetch('{{ membershipManagementBaseUrl }}/update-display-on-website', {
+						const response = await fetch('{{ membershipManagementBaseUrl }}/update-profile', {
 							method: 'POST',
-							headers: {
-								'Content-Type': 'application/json',
-							},
-							body: JSON.stringify({ token, displayOnWebsite: displayOnWebsiteNew }),
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({
+								token,
+								displayOnWebsite: displayOnWebsiteNew,
+								name: document.querySelector('#member-name').value.trim(),
+								program: document.querySelector('#member-program').value.trim(),
+								bio: document.querySelector('#member-bio').value.trim(),
+							}),
 						});
 						const json = await response.json();
-						if (json.status === 'success') {
-							displayOnWebsite = displayOnWebsiteNew;
-							updateDisplayOnWebsite();
-						} else {
-							alert(json.message);
-							document.querySelector('#update-display-on-website').disabled = false;
+						if (!response.ok || json.status !== 'success') throw new Error(json.message || 'Could not save the website profile.');
+						displayOnWebsite = displayOnWebsiteNew;
+						for (const id of ['member-name', 'member-program', 'member-bio']) {
+							const input = document.getElementById(id);
+							input.dataset.saved = input.value.trim();
 						}
+						savedName = nameNew = document.querySelector('#member-name').value.trim();
+						savedProgram = programNew = document.querySelector('#member-program').value.trim();
+						savedBio = bioNew = document.querySelector('#member-bio').value.trim();
 					} catch (error) {
 						console.error(error);
-						alert(`An error occurred. Please try again later. Error: ${error}`);
-						document.querySelector('#update-display-on-website').disabled = false;
+						alert(error.message || 'An error occurred. Please try again later.');
+					} finally {
+						controls.forEach(control => control.disabled = false);
+						button.classList.remove('loading');
+						updateWebsiteProfileButton();
 					}
-					document.querySelector('#update-display-on-website').classList.remove('loading');
-					document.querySelector('#display-on-website-switch').disabled = false;
 				}
 			</script>
 		</div>
-		<div id="profile-name" class="card">
-			<div class="card-title">Additional Name</div>
+			<div id="profile-name" class="profile-section">
+			<div class="profile-section-title">Additional Name</div>
 			<div class="card-body">
 				<p>Your osu! username is your primary name on the member page. You can add an additional name to show beside it in parentheses.</p>
-				<p class="note {{ optionalDisplayNoteClass }}">This section will only take effect if you have chosen to display your profile on the club website in the previous section. Leave it empty if you do not want your name displayed.</p>
-				<p class="note {{ executiveDisplayNoteClass }}">Your executive profile is always listed. Leave this empty if you do not want an additional name displayed.</p>
-				<input class="textfield big" id="member-name" maxlength="20" placeholder="Additional name (optional)">
+				<label class="profile-field">
+					<span class="profile-field-label">Additional name</span>
+					<input class="textfield big" id="member-name" maxlength="20" placeholder="Additional name (optional)">
+				</label>
 			</div>
-			<div class="card-actions bio-actions">
+			<div class="profile-character-row">
 				<span class="bio-character-count" id="name-character-count">0 / 20</span>
-				<button class="button" disabled id="update-name" onclick="submitName()">Save Name</button>
 			</div>
 			<script>
 				let savedName = {{ name }};
 				let nameNew = savedName;
 				const nameInput = document.querySelector('#member-name');
-				const nameButton = document.querySelector('#update-name');
 				const nameCount = document.querySelector('#name-character-count');
 				nameInput.value = savedName;
+				nameInput.dataset.saved = savedName;
 				const updateNameEditor = () => {
 					nameNew = nameInput.value.trim();
 					nameCount.textContent = `${nameInput.value.length} / 20`;
-					nameButton.disabled = nameNew === savedName;
+					updateWebsiteProfileButton();
 				};
 				nameInput.addEventListener('input', updateNameEditor);
 				updateNameEditor();
-
-				async function submitName() {
-					nameButton.disabled = true;
-					nameButton.classList.add('loading');
-					nameInput.disabled = true;
-					try {
-						const response = await fetch('{{ membershipManagementBaseUrl }}/update-name', {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({ token, name: nameNew }),
-						});
-						const json = await response.json();
-						if (!response.ok || json.status !== 'success') throw new Error(json.message || 'Could not save name.');
-						savedName = nameNew;
-						nameInput.value = savedName;
-					} catch (error) {
-						console.error(error);
-						alert(error.message || 'An error occurred. Please try again later.');
-					} finally {
-						nameInput.disabled = false;
-						nameButton.classList.remove('loading');
-						updateNameEditor();
-					}
-				}
 			</script>
 		</div>
-		<div id="profile-program" class="card">
-			<div class="card-title">Program / Graduation Year</div>
+			<div id="profile-program" class="profile-section">
+			<div class="profile-section-title">Program / Graduation Year</div>
 			<div class="card-body">
-				<p>Add your program, or your program and expected graduation year, to the club website.</p>
-				<p class="note {{ optionalDisplayNoteClass }}">This section will only take effect if you have chosen to display your profile on the club website in the previous section. Leave it empty if you do not want it displayed.</p>
-				<p class="note {{ executiveDisplayNoteClass }}">Your executive profile is always listed. Leave this empty if you do not want it displayed.</p>
-				<input class="textfield big" id="member-program" maxlength="100" placeholder="For example: Honours Math 2028">
+				<p>Add your program and/or expected graduation year to the club website.</p>
+				<label class="profile-field">
+					<span class="profile-field-label">Program and/or graduation year</span>
+					<input class="textfield big" id="member-program" maxlength="100" placeholder="For example: Honours Math 2028">
+				</label>
 			</div>
-			<div class="card-actions bio-actions">
+			<div class="profile-character-row">
 				<span class="bio-character-count" id="program-character-count">0 / 100</span>
-				<button class="button" disabled id="update-program" onclick="submitProgram()">Save Program</button>
 			</div>
 			<script>
 				let savedProgram = {{ program }};
 				let programNew = savedProgram;
 				const programInput = document.querySelector('#member-program');
-				const programButton = document.querySelector('#update-program');
 				const programCount = document.querySelector('#program-character-count');
 				programInput.value = savedProgram;
+				programInput.dataset.saved = savedProgram;
 				const updateProgramEditor = () => {
 					programNew = programInput.value.trim();
 					programCount.textContent = `${programInput.value.length} / 100`;
-					programButton.disabled = programNew === savedProgram;
+					updateWebsiteProfileButton();
 				};
 				programInput.addEventListener('input', updateProgramEditor);
 				updateProgramEditor();
-
-				async function submitProgram() {
-					programButton.disabled = true;
-					programButton.classList.add('loading');
-					programInput.disabled = true;
-					try {
-						const response = await fetch('{{ membershipManagementBaseUrl }}/update-program', {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({ token, program: programNew }),
-						});
-						const json = await response.json();
-						if (!response.ok || json.status !== 'success') throw new Error(json.message || 'Could not save the program.');
-						savedProgram = programNew;
-						programInput.value = savedProgram;
-					} catch (error) {
-						console.error(error);
-						alert(error.message || 'An error occurred. Please try again later.');
-					} finally {
-						programInput.disabled = false;
-						programButton.classList.remove('loading');
-						updateProgramEditor();
-					}
-				}
 			</script>
 		</div>
-		<div id="profile-bio" class="card">
-			<div class="card-title">Bio</div>
+			<div id="profile-bio" class="profile-section">
+			<div class="profile-section-title">Bio</div>
 			<div class="card-body">
 				<p>Add a short bio to display on the club website.</p>
-				<p class="note {{ optionalDisplayNoteClass }}">This section will only take effect if you have chosen to display your profile on the club website in the previous section. Leave it empty if you do not want your bio displayed.</p>
-				<p class="note {{ executiveDisplayNoteClass }}">Your executive profile is always listed. Leave this empty if you do not want your bio displayed.</p>
-				<textarea class="textfield bio-textarea" id="member-bio" maxlength="200" rows="5" placeholder="What do you play, map, stream, or study?"></textarea>
+				<label class="profile-field">
+					<span class="profile-field-label">Bio</span>
+					<textarea class="textfield bio-textarea" id="member-bio" maxlength="200" rows="5" placeholder="What do you play, map, stream, or study?"></textarea>
+				</label>
 			</div>
-			<div class="card-actions bio-actions">
+			<div class="profile-character-row">
 				<span class="bio-character-count" id="bio-character-count">0 / 200</span>
-				<button class="button" disabled id="update-bio" onclick="submitBio()">Save Bio</button>
 			</div>
 			<script>
 				let savedBio = {{ bio }};
 				let bioNew = savedBio;
 				const bioInput = document.querySelector('#member-bio');
-				const bioButton = document.querySelector('#update-bio');
 				const bioCount = document.querySelector('#bio-character-count');
 				bioInput.value = savedBio;
+				bioInput.dataset.saved = savedBio;
 				const updateBioEditor = () => {
 					bioNew = bioInput.value.trim();
 					bioCount.textContent = `${bioInput.value.length} / 200`;
-					bioButton.disabled = bioNew === savedBio;
+					updateWebsiteProfileButton();
 				};
 				bioInput.addEventListener('input', updateBioEditor);
 				updateBioEditor();
-
-				async function submitBio() {
-					bioButton.disabled = true;
-					bioButton.classList.add('loading');
-					bioInput.disabled = true;
-					try {
-						const response = await fetch('{{ membershipManagementBaseUrl }}/update-bio', {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({ token, bio: bioNew }),
-						});
-						const json = await response.json();
-						if (!response.ok || json.status !== 'success') throw new Error(json.message || 'Could not save bio.');
-						savedBio = bioNew;
-						bioInput.value = savedBio;
-					} catch (error) {
-						console.error(error);
-						alert(error.message || 'An error occurred. Please try again later.');
-					} finally {
-						bioInput.disabled = false;
-						bioButton.classList.remove('loading');
-						updateBioEditor();
-					}
-				}
 			</script>
+		</div>
+			<div class="card-actions">
+				<button class="button" disabled id="update-website-profile" onclick="submitWebsiteProfile()">Save Profile</button>
+			</div>
 		</div>
 		<div id="social-links" class="card">
 			<div class="card-title">Social Links</div>
