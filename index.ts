@@ -77,6 +77,13 @@ const verificationPool = new Map<string, VerificationInfo>();
 const VERIFICATION_ADDRESS = (env.EMAIL_VERIFICATION_ADDRESS ?? 'verify@ouw.s23.moe').toLowerCase();
 const VERIFICATION_CHALLENGE_TTL = 10 * 60 * 1000;
 const MAX_INBOUND_EMAIL_SIZE = 256 * 1024;
+const EXECUTIVE_TITLE_ROLES = [
+    { title: 'President', roleId: '579403603572293642' },
+    { title: 'Vice President', roleId: '530847746052063238' },
+    { title: 'Tournament Host', roleId: '530847618675376138' },
+    { title: 'Contest Host', roleId: '530848225301626883' },
+    { title: 'Treasurer', roleId: '530848184839438357' },
+] as const;
 
 let publicMembersSyncTimer: NodeJS.Timeout | null = null;
 let publicMembersSyncRunning = false;
@@ -128,6 +135,7 @@ async function syncPublicMembersNow(reason: string): Promise<void> {
             ]));
             let snapshot = buildPublicMemberSnapshot(rows, profiles, {
                 executiveRoleId: env.EXEC_ROLE_ID,
+                executiveTitles: EXECUTIVE_TITLE_ROLES,
                 alumniRoleId: env.ALUMNI_ROLE_ID ?? env.SKIP_ROLE_IDS?.[0],
                 currentStudentRoleId: env.ROLE_ID.CURRENT_UW_STUDENT,
             });
@@ -822,7 +830,10 @@ app.get('/membership-admin/:adminToken', async (req: express.Request, res: expre
             } catch {}
 
             let category = 'Other';
-            if (guildMember?.roles.cache.has(env.EXEC_ROLE_ID)) category = 'Executive';
+            if (guildMember && (
+                guildMember.roles.cache.has(env.EXEC_ROLE_ID) ||
+                EXECUTIVE_TITLE_ROLES.some(({ roleId }) => guildMember.roles.cache.has(roleId))
+            )) category = 'Executive';
             else if (alumniRoleId && guildMember?.roles.cache.has(alumniRoleId)) category = 'Alumni';
             else if (guildMember?.roles.cache.has(env.ROLE_ID.CURRENT_UW_STUDENT)) category = 'Current Student';
             else if (guildMember?.roles.cache.has(env.ROLE_ID.VERIFIED)) category = 'Verified';
@@ -957,6 +968,11 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, re
     })();
 
     const discordUsername = row.get('discord_username') ?? '';
+    const guildMember = client.guilds.cache.get(env.SERVER_ID)?.members.cache.get(userId);
+    const isExecutive = Boolean(guildMember && (
+        guildMember.roles.cache.has(env.EXEC_ROLE_ID) ||
+        EXECUTIVE_TITLE_ROLES.some(({ roleId }) => guildMember.roles.cache.has(roleId))
+    ));
 
     const socialLinks: SocialLink[] = socialMediaFields.map(field => {
         if (field.id === 'discord' && discordUsername) {
@@ -1007,6 +1023,8 @@ app.get('/membership/:encryptedUserIdAndExpiry', async (req: express.Request, re
         osuAccount: osuAccountId,
         osuAccountJson: JSON.stringify(osuAccountId),
         displayOnWebsite: utils.parseHumanBool(row.get('display_on_website'), false),
+        executiveDisplayNoteClass: isExecutive ? '' : 'hide',
+        optionalDisplayNoteClass: isExecutive ? 'hide' : '',
         osuUsername: JSON.stringify(osuUsername).replace(/</g, '\\u003c'),
         name: JSON.stringify((socialLinksInSheetJson.name ?? '').toString()).replace(/</g, '\\u003c'),
         bio: JSON.stringify((socialLinksInSheetJson.bio ?? '').toString()).replace(/</g, '\\u003c'),
@@ -2621,6 +2639,7 @@ client.on('guildMemberUpdate', (oldMember, newMember) => {
     if (newMember.guild.id !== env.SERVER_ID) return;
     const relevantRoleIds = [
         env.EXEC_ROLE_ID,
+        ...EXECUTIVE_TITLE_ROLES.map(({ roleId }) => roleId),
         env.ALUMNI_ROLE_ID ?? env.SKIP_ROLE_IDS?.[0],
         env.ROLE_ID.CURRENT_UW_STUDENT,
     ].filter(Boolean);

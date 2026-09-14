@@ -186,7 +186,7 @@
 					<label for="display-on-website-switch"></label>
 					<label for="display-on-website-switch">Display my profile on club website</label>
 				</div>
-				<p class="note">Displaying your profile on the website requires your osu! account to be linked. If there is no osu! account linked, this setting will not take effect.</p>
+				<p class="note {{ executiveDisplayNoteClass }}">Executive profiles are always listed on the club website. This switch saves your preference for when you no longer have an executive role.</p>
 			</div>
 			<div class="card-actions">
 				<button class="button" id="refresh-osu-username" onclick="refreshOsuUsername()">Refresh osu! Username</button>
@@ -271,7 +271,8 @@
 			<div class="card-title">Additional Name</div>
 			<div class="card-body">
 				<p>Your osu! username is your primary name on the member page. You can add an additional name to show beside it in parentheses.</p>
-				<p class="note">This section will only take effect if you have chosen to display your profile on the club website in the previous section. Leave it empty if you do not want your name displayed.</p>
+				<p class="note {{ optionalDisplayNoteClass }}">This section will only take effect if you have chosen to display your profile on the club website in the previous section. Leave it empty if you do not want your name displayed.</p>
+				<p class="note {{ executiveDisplayNoteClass }}">Your executive profile is always listed. Leave this empty if you do not want an additional name displayed.</p>
 				<input class="textfield big" id="member-name" maxlength="20" placeholder="Additional name (optional)">
 			</div>
 			<div class="card-actions bio-actions">
@@ -322,7 +323,8 @@
 			<div class="card-title">Bio</div>
 			<div class="card-body">
 				<p>Add a short bio to display on the club website.</p>
-				<p class="note">This section will only take effect if you have chosen to display your profile on the club website in the previous section. Leave it empty if you do not want your bio displayed.</p>
+				<p class="note {{ optionalDisplayNoteClass }}">This section will only take effect if you have chosen to display your profile on the club website in the previous section. Leave it empty if you do not want your bio displayed.</p>
+				<p class="note {{ executiveDisplayNoteClass }}">Your executive profile is always listed. Leave this empty if you do not want your bio displayed.</p>
 				<textarea class="textfield bio-textarea" id="member-bio" maxlength="200" rows="5" placeholder="What do you play, map, stream, or study?"></textarea>
 			</div>
 			<div class="card-actions bio-actions">
@@ -373,7 +375,8 @@
 			<div class="card-title">Social Links</div>
 			<div class="card-body">
 				<p class="linked-website">If you wish, you can add your social links to be displayed on the club website!</p>
-				<p class="note">This section will only take effect if you have chosen to display your profile on the club website in the previous section.</p>
+				<p class="note {{ optionalDisplayNoteClass }}">This section will only take effect if you have chosen to display your profile on the club website in the previous section.</p>
+				<p class="note {{ executiveDisplayNoteClass }}">Your executive profile is always listed. You can still choose which social links appear.</p>
 				<div class="social-link-list">
 				</div>
 			</div>

@@ -31,6 +31,10 @@ export interface DiscordMemberProfile {
 
 export interface PublicMemberRoleConfig {
     executiveRoleId: string;
+    executiveTitles?: ReadonlyArray<{
+        roleId: string;
+        title: string;
+    }>;
     alumniRoleId: string;
     currentStudentRoleId: string;
 }
@@ -78,10 +82,19 @@ function getCategory(
     roleIds: ReadonlySet<string>,
     config: PublicMemberRoleConfig,
 ): PublicMemberCategory | null {
-    if (roleIds.has(config.executiveRoleId)) return 'executive';
+    if (roleIds.has(config.executiveRoleId) || config.executiveTitles?.some(({ roleId }) => roleIds.has(roleId))) {
+        return 'executive';
+    }
     if (roleIds.has(config.alumniRoleId)) return 'alumni';
     if (roleIds.has(config.currentStudentRoleId)) return 'member';
     return null;
+}
+
+function getExecutiveTitle(
+    roleIds: ReadonlySet<string>,
+    config: PublicMemberRoleConfig,
+): string {
+    return config.executiveTitles?.find(({ roleId }) => roleIds.has(roleId))?.title ?? 'Executive';
 }
 
 export function buildPublicMemberSnapshot(
@@ -93,14 +106,14 @@ export function buildPublicMemberSnapshot(
     const members: PublicMember[] = [];
 
     for (const row of rows) {
-        if (!['true', 'yes', '1', 'on'].includes(text(row.get('display_on_website')).toLowerCase())) continue;
-
         const discordId = text(row.get('discord_id'));
         const discordMember = discordMembers.get(discordId);
         if (!discordMember) continue;
 
         const category = getCategory(discordMember.roleIds, config);
         if (!category) continue;
+        const displayOnWebsite = ['true', 'yes', '1', 'on'].includes(text(row.get('display_on_website')).toLowerCase());
+        if (category !== 'executive' && !displayOnWebsite) continue;
 
         const socialLinks = parseSocialLinks(row.get('social_links'));
         const discord = socialLinks.discord === ''
@@ -120,7 +133,7 @@ export function buildPublicMemberSnapshot(
             github: text(socialLinks.github) || null,
             name: text(socialLinks.name).slice(0, 20) || null,
             bio: text(socialLinks.bio).slice(0, 200) || null,
-            role: category === 'executive' ? 'Executive' : null,
+            role: category === 'executive' ? getExecutiveTitle(discordMember.roleIds, config) : null,
         });
     }
 
