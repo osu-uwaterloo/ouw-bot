@@ -1079,25 +1079,6 @@ app.post('/membership/:encryptedUserIdAndExpiry/update-admin-identifiers', async
             return res.status(400).send({ status: 'error', message: 'osu! UID must contain digits only.' });
         }
 
-        const rows = await sheet.getAllRows();
-        const duplicateWatiam = rows.some(candidate =>
-            String(candidate.get('discord_id') ?? '') !== userId &&
-            String(candidate.get('watiam') ?? '').trim().toLowerCase() === watiam
-        );
-        if (duplicateWatiam) {
-            return res.status(409).send({ status: 'error', message: 'That WatIAM is already assigned to another membership.' });
-        }
-
-        const duplicateOsuUid = osuUid && rows.some(candidate => {
-            if (String(candidate.get('discord_id') ?? '') === userId) return false;
-            const rawOsu = String(candidate.get('osu') ?? '').trim();
-            const candidateOsuUid = rawOsu.match(/^\d+$/)?.[0] ?? rawOsu.match(/osu\.ppy\.sh\/users\/(\d+)/i)?.[1] ?? '';
-            return candidateOsuUid === osuUid;
-        });
-        if (duplicateOsuUid) {
-            return res.status(409).send({ status: 'error', message: 'That osu! UID is already linked to another membership.' });
-        }
-
         let osuUsername = '';
         if (osuUid) {
             try {

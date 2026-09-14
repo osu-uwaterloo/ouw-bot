@@ -468,6 +468,11 @@ body {
 	font-size: 0.8em;
 }
 
+.profile-section-intro {
+	margin: 0.35em 0 1em;
+	color: var(--gray-2);
+}
+
 #website-profile {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
