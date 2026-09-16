@@ -15,7 +15,6 @@ import {
     InteractionContextType,
     UserContextMenuCommandInteraction,
     MessageContextMenuCommandInteraction,
-    PermissionsBitField,
     ChannelType,
     Partials,
     SlashCommandBuilder,
@@ -1929,7 +1928,7 @@ const reactTickToMessage = async (interaction: ButtonInteraction) => {
     });
 }
 
-// New non-UW student verification by inviter
+// Non-UW student verification by inviter or executive review
 client.on('messageCreate', async (message) => {
     if (message.channelId !== env.VERIFY_CHANNEL_ID) {
         return;
@@ -1944,49 +1943,162 @@ client.on('messageCreate', async (message) => {
     if (!mentions || mentions.size > 2) {
         return;
     }
-    const inviters = mentions.filter(member => {
-        if (member.roles.cache.has(env.ROLE_ID.CURRENT_UW_STUDENT)) return true;
-        for (const skipRole of env.SKIP_ROLE_IDS) {
-            if (member.roles.cache.has(skipRole)) return true;
-        }
-        return false;
-    });
-    if (!inviters.size) {
+    const trustedInviters = mentions.filter(isTrustedInviter);
+    if (trustedInviters.size) {
+        const inviterIds = trustedInviters.map(inviter => inviter.id);
+        await message.reply({
+            content: `
+                Hi! Welcome to osu UWaterloo!
+
+                ${trustedInviters.map(inviter => `<@${inviter.id}>`).join(' ')}, can you confirm that you know this person?
+
+                If you do, please click the button below, and they will be automatically verified. If you don't know them, please click the other button.
+
+                -# The buttons are only for ${trustedInviters.map(inviter => `<@${inviter.id}>`).join(', ')} and Club Executives.
+            `.replace(/^[ \t\r\f\v]+/gm, '').trim(),
+            components: [
+                new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder()
+                        .setLabel('Yes, I know them')
+                        .setStyle(ButtonStyle.Success)
+                        .setCustomId(`verify_invention_request_from_${message.author.id}_yes_${inviterIds.join('_')}`),
+                    new ButtonBuilder()
+                        .setLabel("No, I don't know them")
+                        .setStyle(ButtonStyle.Danger)
+                        .setCustomId(`verify_invention_request_from_${message.author.id}_no_${inviterIds.join('_')}`),
+                )
+            ],
+        });
+        logger.info(message.member!, 'Created an invitation verification request', `The user sent a verification request to the mentioned members. [Message Link](${message.url})`, embed => {
+            embed.addFields(
+                { name: 'Inviters given by the user', value: inviterIds.map(id => `<@${id}>`).join(', ') },
+                { name: 'Message', value: message.content || '(empty)' }
+            );
+        });
         return;
     }
 
-    message.reply({
-        content: `
-            Hi! Welcome to osu UWaterloo!
+    const inviters = mentions.filter(isReviewOnlyInviter);
+    const inviterIds = inviters.map(inviter => inviter.id);
+    const content = [
+        'Hi! Welcome to osu UWaterloo!',
+        inviterIds.length
+            ? 'A Club Executive needs to approve this request because the inviter is not a UW student. The inviter can still confirm if they know the person here.'
+            : 'No eligible inviter was mentioned. A Club Executive or administrator with permission to manage roles can review this request.',
+        inviterIds.length
+            ? `**${inviters.map(inviter => `<@${inviter.id}>`).join(' ')}**, can you confirm that you know this person? If you do, please click the button below. If you don't know them, please click the other button.`
+            : '',
+        inviterIds.length
+            ? `-# The confirmation buttons are only for ${inviters.map(inviter => `<@${inviter.id}>`).join(', ')}. The approval button is only for Club Executives and administrators with permission to manage roles.`
+            : '-# The review buttons are only for Club Executives and administrators with permission to manage roles.',
+    ].filter(Boolean).join('\n\n');
 
-            ${inviters.map(inviter => `<@${inviter.id}>`).join(' ')}, can you confirm that you know this person?
-
-            If you do, please click the button below, and they will be automatically verified. If you don't know them, please click the other button.
-
-            -# The buttons are only for ${inviters.map(inviter => `<@${inviter.id}>`).join(', ')} and Club Executives.
-        `.replace(/^[ \t\r\f\v]+/gm, '').trim(),
-        components: [
-            new ActionRowBuilder<ButtonBuilder>().addComponents(
-                new ButtonBuilder()
-                    .setLabel('Yes, I know them')
-                    .setStyle(ButtonStyle.Success)
-                    .setCustomId(`verify_invention_request_from_${message.author.id}_yes_${inviters.map(inviter => inviter.id).join('_')}`),
-                new ButtonBuilder()
-                    .setLabel('No, I don\'t know them')
-                    .setStyle(ButtonStyle.Danger)
-                    .setCustomId(`verify_invention_request_from_${message.author.id}_no_${inviters.map(inviter => inviter.id).join('_')}`),
-            )
-        ]
-    });
+    await message.reply({ content, components: vouchButtons(message.author.id, inviterIds) });
 
     // Log the message
-    logger.info(message.member!, 'Created a invitation verification request', `The user sent a verification request to the mentioned members. [Message Link](${message.url})`, embed => {
+    logger.info(message.member!, 'Created an invitation verification request', `The user requested verification. [Message Link](${message.url})`, embed => {
         embed.addFields(
-            { name: 'Inviters given by the user', value: inviters.map(inviter => `<@${inviter.id}>`).join(', ') },
-            { name: 'Message', value: message.content }
+            { name: 'Eligible inviters', value: inviterIds.length ? inviterIds.map(id => `<@${id}>`).join(', ') : 'None' },
+            { name: 'Message', value: message.content || '(empty)' }
         );
     });
 });
+
+function isTrustedInviter(member: GuildMember): boolean {
+    return member.roles.cache.has(env.ROLE_ID.CURRENT_UW_STUDENT) ||
+        env.SKIP_ROLE_IDS.some((roleId: string) => member.roles.cache.has(roleId));
+}
+
+function isReviewOnlyInviter(member: GuildMember): boolean {
+    return member.roles.cache.has(env.ROLE_ID.VERIFIED) && !isTrustedInviter(member);
+}
+
+function canReviewVouching(member: GuildMember): boolean {
+    return member.permissions.has(PermissionFlagsBits.ManageRoles);
+}
+
+function vouchButtons(inviteeId: string, inviterIds: string[]) {
+    const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+    if (inviterIds.length) {
+        rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+                .setLabel('Yes, I know them')
+                .setStyle(ButtonStyle.Success)
+                .setCustomId(`vouch:${inviteeId}:confirm:${inviterIds.join('.')}`),
+            new ButtonBuilder()
+                .setLabel("No, I don't know them")
+                .setStyle(ButtonStyle.Secondary)
+                .setCustomId(`vouch:${inviteeId}:decline:${inviterIds.join('.')}`),
+        ));
+    }
+    const reviewButtons = [
+        new ButtonBuilder()
+            .setLabel('Approve verification')
+            .setStyle(ButtonStyle.Success)
+            .setCustomId(`vouch:${inviteeId}:approve`),
+    ];
+    if (!inviterIds.length) reviewButtons.push(
+        new ButtonBuilder()
+            .setLabel('Decline verification')
+            .setStyle(ButtonStyle.Danger)
+            .setCustomId(`vouch:${inviteeId}:reject`)
+    );
+    rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...reviewButtons));
+    return rows;
+}
+
+async function onVouchButton(interaction: ButtonInteraction) {
+    const match = interaction.customId.match(/^vouch:(\d+):(confirm|decline|approve|reject)(?::([\d.]+))?$/);
+    if (!match) {
+        await interaction.reply({ content: 'Invalid verification button.', ephemeral: true });
+        return;
+    }
+    const [, inviteeId, action, inviterIdsText] = match;
+    const inviterIds = inviterIdsText?.split('.') ?? [];
+    const actor = interaction.member as GuildMember;
+    const isInviterAction = action === 'confirm' || action === 'decline';
+    if (isInviterAction ? !inviterIds.includes(actor.id) || !isReviewOnlyInviter(actor) : !canReviewVouching(actor)) {
+        await interaction.reply({ content: 'You do not have permission to use this button.', ephemeral: true });
+        return;
+    }
+
+    const invitee = await interaction.guild!.members.fetch(inviteeId).catch(() => null);
+    if (!invitee) {
+        await interaction.update({ content: `${interaction.message.content}\n\n> ⚠️ This person is no longer in the server.`, components: [] });
+        return;
+    }
+    if (invitee.roles.cache.has(env.ROLE_ID.VERIFIED)) {
+        await interaction.reply({ content: 'This person is already verified.', ephemeral: true });
+        await interaction.message.edit({ components: [] });
+        return;
+    }
+
+    const botMessage = interaction.message as Message;
+    if (action === 'approve' || action === 'reject') {
+        if (action === 'approve') await invitee.roles.add(env.ROLE_ID.VERIFIED);
+        const result = action === 'approve'
+            ? `> ✅ Approved by <@${actor.id}>. The Verified role has been granted.`
+            : `> ❌ Declined by <@${actor.id}>. The Verified role was not granted.`;
+        await interaction.update({ content: `${botMessage.content}\n\n${result}`, components: [] });
+        (action === 'approve' ? logger.success : logger.error).call(
+            logger,
+            invitee,
+            action === 'approve' ? 'Verification approved by executive/admin' : 'Verification declined by executive/admin',
+            `Reviewed by <@${actor.id}>. [Message Link](${botMessage.url})`,
+        );
+        return;
+    }
+
+    const result = action === 'confirm'
+        ? `> ✅ <@${actor.id}> confirmed they know this person. Waiting for a Club Executive or administrator with permission to manage roles to approve verification.`
+        : `> ❌ <@${actor.id}> said they do not know this person.`;
+    await interaction.update({
+        content: `${botMessage.content}\n\n${result}`,
+        components: vouchButtons(inviteeId, []),
+    });
+    logger.info(invitee, 'Inviter responded to verification request',
+        `${action === 'confirm' ? 'Confirmed' : 'Declined'} by <@${actor.id}>. [Message Link](${botMessage.url})`);
+}
 
 async function onVerifyInventionRequest(interaction: ButtonInteraction) {
     const {inviteeId, yesNo, inviterIdsStr} = interaction.customId.match(/^verify_invention_request_from_(?<inviteeId>\d+)_(?<yesNo>yes|no)_(?<inviterIdsStr>.+)$/)?.groups ?? {};
@@ -2002,7 +2114,7 @@ async function onVerifyInventionRequest(interaction: ButtonInteraction) {
     
     const botMessage = interaction.message as Message;
     
-    const isMod = (interaction.member!.permissions as Readonly<PermissionsBitField>).has(PermissionFlagsBits.ManageRoles);
+    const isMod = canReviewVouching(interaction.member as GuildMember);
     const isInviter = inviterIds.includes(interaction.user.id);
 
     if (!isMod && !isInviter) {
@@ -2469,6 +2581,8 @@ client.on('interactionCreate', async (interaction: Interaction) => {
         await reactTickToMessage(interaction as ButtonInteraction);
     } else if (action.startsWith('verify_invention_request_from_')) {
         await onVerifyInventionRequest(interaction as ButtonInteraction);
+    } else if (action.startsWith('vouch:')) {
+        await onVouchButton(interaction as ButtonInteraction);
     } else if (action === 'get_twitch_2fa_code') {
         await onGetTwitch2FACode(interaction as ButtonInteraction);
     }
